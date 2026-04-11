@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primarios */
+  --color-primary:        #2563D4;
+  --color-primary-hover:  #1A4DB8;
+  --color-primary-active: #133A94;
+  --color-primary-subtle: #EBF2FF;
+  --color-primary-border: #C3D8FE;
+
+  /* Acento IA */
+  --color-ai-accent: #4F5FE8;
+  --color-ai-hover:  #6B7FF0;
+  --color-ai-subtle: #EEF0FD;
+
+  /* Fondos */
+  --color-bg-page:      #F7F8FA;
+  --color-bg-surface:   #FFFFFF;
+  --color-bg-surface-2: #EFF1F5;
+
+  /* Texto */
+  --color-text-primary:   #0F1623;
+  --color-text-secondary: #4A5568;
+  --color-text-muted:     #8896A9;
+
+  /* Bordes */
+  --color-border: #E2E6ED;
+
+  /* Estados */
+  --color-success:    #16A34A;
+  --color-success-bg: #DCFCE7;
+  --color-warning:    #D97706;
+  --color-warning-bg: #FEF3C7;
+  --color-error:      #DC2626;
+  --color-error-bg:   #FEE2E2;
+  --color-review:     #7C3AED;
+  --color-review-bg:  #F3E8FF;
+
+  /* Tipografía */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary:        #4D8EF5;
+    --color-primary-hover:  #3B7FE8;
+    --color-primary-active: #2563D4;
+    --color-primary-subtle: #0F1E3D;
+    --color-primary-border: #162B5C;
+
+    --color-ai-accent: #818CF8;
+    --color-ai-hover:  #6B7FF0;
+    --color-ai-subtle: #1A1D3D;
+
+    --color-bg-page:      #0D1117;
+    --color-bg-surface:   #161B24;
+    --color-bg-surface-2: #1E2633;
+
+    --color-text-primary:   #E8EDF5;
+    --color-text-secondary: #94A3B8;
+    --color-text-muted:     #4A5A72;
+
+    --color-border: #2A3547;
+
+    --color-success:    #22C55E;
+    --color-success-bg: #052E16;
+    --color-warning:    #F59E0B;
+    --color-warning-bg: #1C1100;
+    --color-error:      #F87171;
+    --color-error-bg:   #1F0606;
+    --color-review:     #A78BFA;
+    --color-review-bg:  #1E0938;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg-page);
+  color: var(--color-text-primary);
+}

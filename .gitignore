@@ -1,36 +1,111 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+*.egg
 dist/
 build/
+.eggs/
+wheels/
+
+# Entornos virtuales
+backend/venv/
+backend/.venv/
 .venv/
 venv/
 env/
+ENV/
 
-# Node
+# Pytest
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Mypy / Ruff / Black
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / Frontend ───────────────────────────────────────────────
 node_modules/
+frontend/node_modules/
 package-lock.json
+yarn.lock
 .next/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.local
 
-# IDEs y Editores
+# ── IDEs y Editores ───────────────────────────────────────────────
 .vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
-# Environment / Secrets
+# ── Environment / Secrets ─────────────────────────────────────────
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
+*.pem
+*.key
+*.cert
 
-# Database
+# ── Base de datos local ───────────────────────────────────────────
 *.db
 *.sqlite3
+*.sql.bak
 
-# OS (Sistema Operativo)
+# ── Docker volumes y datos locales ────────────────────────────────
+postgres_data/
+minio_data/
+docker/volumes/
+
+# ── OS ────────────────────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── ML / Modelos IA ───────────────────────────────────────────────
+ml/models/*.bin
+ml/models/*.pt
+ml/models/*.safetensors
+ml/models/*.onnx
+*.pkl
+*.pickle
+.cache/huggingface/
+backend/.cache/
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/
+backend/logs/
+
+# ── Archivos temporales ───────────────────────────────────────────
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ── Claude Code ───────────────────────────────────────────────────
+# Ignorar: configuración local de cada desarrollador
+.claude/settings.local.json
+
+# Commitear (no ignorar):
+# .claude/CLAUDE.md        → contexto del proyecto
+# .claude/settings.json    → configuración compartida del equipo
+# .claude/skills/          → skills del proyecto
+# CLAUDE.md                → contexto raíz
