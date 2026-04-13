@@ -15,6 +15,7 @@ backend/.venv/
 .venv/
 venv/
 env/
+.env/
 ENV/
 
 # Pytest
