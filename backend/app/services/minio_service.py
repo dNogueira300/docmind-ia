@@ -67,6 +67,17 @@ def get_presigned_url(stored_path: str, expires_seconds: int = 3600) -> str:
     )
 
 
+def get_file_bytes(stored_path: str) -> bytes:
+    """Descarga un archivo de MinIO y retorna su contenido como bytes."""
+    client = _get_client()
+    response = client.get_object(settings.minio_bucket, stored_path)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
 def delete_file(stored_path: str) -> None:
     """Elimina un archivo de MinIO."""
     client = _get_client()

@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
 
 # Instalar dependencias Python
 COPY requirements.docker.txt .
-RUN pip install --no-cache-dir -r requirements.docker.txt
+RUN pip install --no-cache-dir --timeout=300 -r requirements.docker.txt
 
 # Copiar código fuente
 COPY . .

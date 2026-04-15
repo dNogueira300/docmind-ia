@@ -18,6 +18,7 @@ minio==7.2.15
 # OCR
 pytesseract==0.3.13
 Pillow==11.2.1
+pypdf==5.4.0
 
 # IA / NLP
 transformers==4.52.0

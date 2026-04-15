@@ -4,8 +4,10 @@ from uuid import UUID, uuid4
 from typing import Annotated, Optional
 
 from fastapi import (
-    APIRouter, Depends, HTTPException, UploadFile, File, Request, status, Query
+    APIRouter, BackgroundTasks, Depends, HTTPException,
+    UploadFile, File, Request, status, Query,
 )
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -16,6 +18,7 @@ from app.models.audit_log import AuditAction
 from app.schemas.document import DocumentResponse, DocumentListResponse, DocumentReclassify
 from app.services import minio_service
 from app.services.audit_service import log_action
+from app.services.pipeline_service import process_document
 
 router = APIRouter(prefix="/documents", tags=["Documentos"])
 
@@ -81,6 +84,7 @@ async def list_documents(
 )
 async def upload_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user: EditorOrAdmin,
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
@@ -141,7 +145,43 @@ async def upload_document(
         ip_address=ip,
     )
 
+    # Disparar pipeline OCR + NLP en background
+    background_tasks.add_task(process_document, str(doc.id), db)
+
     return doc
+
+
+@router.get("/search", response_model=list[DocumentListResponse], summary="Búsqueda full-text")
+async def search_documents(
+    current_user: AnyRole,
+    db: Session = Depends(get_db),
+    q: str = Query(default="", description="Texto a buscar en el contenido de los documentos"),
+    skip: int = 0,
+    limit: int = 20,
+) -> list[Document]:
+    """
+    Búsqueda semántica sobre ocr_text usando PostgreSQL full-text search (índice GIN).
+    Solo retorna documentos clasificados de la organización del usuario autenticado.
+    """
+    if not q.strip():
+        return []
+
+    tsquery = func.plainto_tsquery("spanish", q)
+    tsvector = func.to_tsvector("spanish", Document.ocr_text)
+
+    return (
+        db.query(Document)
+        .filter(
+            Document.organization_id == current_user.organization_id,
+            Document.status == DocStatus.classified,
+            Document.ocr_text.isnot(None),
+            tsvector.op("@@")(tsquery),
+        )
+        .order_by(func.ts_rank(tsvector, tsquery).desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 @router.get("/{document_id}", response_model=DocumentResponse, summary="Ver documento")

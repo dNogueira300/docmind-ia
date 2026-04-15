@@ -1,9 +1,9 @@
 """Configuración global del proyecto leída desde variables de entorno."""
+import os
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# El .env vive en la raíz del proyecto (un nivel arriba de backend/)
 _ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # JWT
     secret_key: str
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 480  # 8 horas
+    access_token_expire_minutes: int = 480
 
     # MinIO
     minio_endpoint: str
@@ -33,15 +33,20 @@ class Settings(BaseSettings):
 
     # Entorno
     environment: str = "development"
+    running_in_docker: bool = False  # ← inyectada por docker-compose
 
     @property
     def db_url(self) -> str:
-        """Usa URL local si está disponible (desarrollo fuera de Docker)."""
+        """Usa URL local solo cuando NO estamos en Docker."""
+        if self.running_in_docker:
+            return self.database_url
         return self.database_url_local or self.database_url
 
     @property
     def minio_host(self) -> str:
-        """Usa endpoint local si está disponible."""
+        """Usa endpoint local solo cuando NO estamos en Docker."""
+        if self.running_in_docker:
+            return self.minio_endpoint
         return self.minio_endpoint_local or self.minio_endpoint
 
 
