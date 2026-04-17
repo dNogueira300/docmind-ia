@@ -58,7 +58,7 @@ def upload_file(
 
 
 def get_presigned_url(stored_path: str, expires_seconds: int = 3600) -> str:
-    """Genera una URL firmada temporal para acceder al archivo."""
+    """Genera URL firmada accesible desde el browser via hosts file."""
     client = _get_client()
     return client.presigned_get_object(
         bucket_name=settings.minio_bucket,

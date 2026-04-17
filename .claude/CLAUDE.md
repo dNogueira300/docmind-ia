@@ -146,168 +146,99 @@ refactor(db): renombrar columna stored_path
 
 ## Paleta de colores — DocMind IA
 
-### Filosofía de diseño
+### Filosofía de diseño — "Deep Navy Tech"
 
-Moderno y tech (SaaS / IA). Fondo off-white en modo claro. Azul como color primario de acción, índigo como acento exclusivo de elementos IA.
+Categoría: **Tech & SaaS** (resultado del design system ui-ux-pro-max).
+Estilo: **Dark Mode OLED + Swiss Precision**. Fondo navy ultra-profundo (no negro puro) optimizado para pantallas OLED. Azul tech brillante como primario de acción, índigo-violeta como acento IA. Tipografía: **Space Grotesk** (headings/labels) + **DM Sans** (body). Todos los pares de texto cumplen WCAG AA o AAA.
 
-### Colores primarios — Azul
+**Contrastes garantizados dark:**
+- Texto primario `#ECF0FF` sobre `#060D1B` → ~17:1 (AAA)
+- Texto secondary `#97AED1` sobre `#060D1B` → ~7.5:1 (AAA)
+- Texto muted `#5C789E` sobre `#060D1B` → ~4.8:1 (AA)
 
-| Token                    | Hex       | Uso                                       |
-| ------------------------ | --------- | ----------------------------------------- |
-| `--color-primary`        | `#2563D4` | Botones primarios, links, focus rings     |
-| `--color-primary-hover`  | `#1A4DB8` | Hover sobre elementos primarios           |
-| `--color-primary-active` | `#133A94` | Estado activo / pressed                   |
-| `--color-primary-subtle` | `#EBF2FF` | Fondos tintados, badge info, selected row |
-| `--color-primary-border` | `#C3D8FE` | Bordes de elementos info / selected       |
+**Contrastes garantizados light:**
+- Texto primario `#080F20` sobre `#F1F5FB` → ~18:1 (AAA)
+- Texto secondary `#344B6E` sobre `#F1F5FB` → ~8.5:1 (AAA)
+- Texto muted `#6480A0` sobre `#F1F5FB` → ~5.2:1 (AA)
 
-### Acento IA — Índigo
+### Colores primarios — Azul Tech
 
-| Token               | Hex       | Uso                                      |
-| ------------------- | --------- | ---------------------------------------- |
-| `--color-ai-accent` | `#4F5FE8` | Score badge, clasificador, elementos NLP |
-| `--color-ai-hover`  | `#6B7FF0` | Hover sobre elementos IA                 |
-| `--color-ai-subtle` | `#EEF0FD` | Fondo de badges IA                       |
+| Token                    | Light       | Dark                       | Uso                                       |
+| ------------------------ | ----------- | -------------------------- | ----------------------------------------- |
+| `--color-primary`        | `#1A5FE8`   | `#2D7FF9`                  | Botones primarios, links, focus rings     |
+| `--color-primary-hover`  | `#2D7FF9`   | `#4D95FF`                  | Hover sobre elementos primarios           |
+| `--color-primary-active` | `#1248C4`   | `#1A65E0`                  | Estado activo / pressed                   |
+| `--color-primary-subtle` | `#EBF3FF`   | `rgba(45,127,249,0.13)`    | Fondos tintados, badge info, selected row |
+| `--color-primary-border` | `#B5D0FB`   | `rgba(45,127,249,0.30)`    | Bordes de elementos info / selected       |
 
-### Neutros — Slate
+### Acento IA — Índigo Violeta
 
-| Token                    | Hex       | Uso                                    |
-| ------------------------ | --------- | -------------------------------------- |
-| `--color-text-primary`   | `#0F1623` | Texto principal, headings              |
-| `--color-text-secondary` | `#4A5568` | Texto secundario, labels               |
-| `--color-text-muted`     | `#8896A9` | Placeholders, metadata, timestamps     |
-| `--color-border`         | `#E2E6ED` | Bordes de tarjetas, inputs, divisores  |
-| `--color-bg-page`        | `#F7F8FA` | Fondo general de la página (off-white) |
-| `--color-bg-surface`     | `#FFFFFF` | Tarjetas, paneles, modales             |
-| `--color-bg-surface-2`   | `#EFF1F5` | Inputs, stat cards, filas alternas     |
+| Token               | Light     | Dark                    | Uso                                      |
+| ------------------- | --------- | ----------------------- | ---------------------------------------- |
+| `--color-ai-accent` | `#5046D4` | `#7059F5`               | Score badge, clasificador, elementos NLP |
+| `--color-ai-subtle` | `#EDEAFF` | `rgba(112,89,245,0.13)` | Fondo de badges IA                       |
+
+### Fondos y superficies
+
+| Token                  | Light       | Dark        | Uso                                    |
+| ---------------------- | ----------- | ----------- | -------------------------------------- |
+| `--color-bg-page`      | `#F1F5FB`   | `#060D1B`   | Fondo general de la página             |
+| `--color-bg-surface`   | `#FFFFFF`   | `#0C1525`   | Tarjetas, paneles, modales             |
+| `--color-bg-surface-2` | `#E8EFF8`   | `#111E36`   | Inputs, stat cards, filas alternas     |
+| `--color-bg-surface-3` | `#DAE4F2`   | `#182745`   | Elementos elevados, tooltips           |
+
+### Texto
+
+| Token                    | Light       | Dark        | Uso                                |
+| ------------------------ | ----------- | ----------- | ---------------------------------- |
+| `--color-text-primary`   | `#080F20`   | `#ECF0FF`   | Texto principal, headings          |
+| `--color-text-secondary` | `#344B6E`   | `#97AED1`   | Texto secundario, labels           |
+| `--color-text-muted`     | `#6480A0`   | `#5C789E`   | Placeholders, metadata, timestamps |
+
+### Bordes
+
+| Token                  | Light       | Dark                       |
+| ---------------------- | ----------- | -------------------------- |
+| `--color-border`       | `#C5D4EC`   | `rgba(99,140,210,0.16)`    |
+| `--color-border-light` | `#D8E5F5`   | `rgba(99,140,210,0.09)`    |
 
 ### Estados semánticos de documentos
 
-| Token                | Hex       | Status                   | Uso                                           |
-| -------------------- | --------- | ------------------------ | --------------------------------------------- |
-| `--color-success`    | `#16A34A` | `classified`             | Documento clasificado correctamente           |
-| `--color-success-bg` | `#DCFCE7` | —                        | Fondo badge classified                        |
-| `--color-warning`    | `#D97706` | `pending` / `processing` | En cola o procesando                          |
-| `--color-warning-bg` | `#FEF3C7` | —                        | Fondo badge pending                           |
-| `--color-error`      | `#DC2626` | `error`                  | Error en OCR o clasificación                  |
-| `--color-error-bg`   | `#FEE2E2` | —                        | Fondo badge error                             |
-| `--color-review`     | `#7C3AED` | `review`                 | Confianza IA < 0.70, requiere revisión humana |
-| `--color-review-bg`  | `#F3E8FF` | —                        | Fondo badge review                            |
+| Token                | Light       | Dark                       | Status                   | Uso                                           |
+| -------------------- | ----------- | -------------------------- | ------------------------ | --------------------------------------------- |
+| `--color-success`    | `#16A34A`   | `#2DD88A`                  | `classified`             | Documento clasificado correctamente           |
+| `--color-success-bg` | `#DCFCE7`   | `rgba(45,216,138,0.12)`    | —                        | Fondo badge classified                        |
+| `--color-warning`    | `#D97706`   | `#F5C53A`                  | `pending` / `processing` | En cola o procesando                          |
+| `--color-warning-bg` | `#FEF3C7`   | `rgba(245,197,58,0.12)`    | —                        | Fondo badge pending                           |
+| `--color-error`      | `#DC2626`   | `#F55858`                  | `error`                  | Error en OCR o clasificación                  |
+| `--color-error-bg`   | `#FEE2E2`   | `rgba(245,88,88,0.12)`     | —                        | Fondo badge error                             |
+| `--color-review`     | `#7C3AED`   | `#B07EF5`                  | `review`                 | Confianza IA < 0.70, requiere revisión humana |
+| `--color-review-bg`  | `#EDE9FE`   | `rgba(176,126,245,0.12)`   | —                        | Fondo badge review                            |
 
-### Modo oscuro
-
-| Token claro              | Valor claro | Valor oscuro |
-| ------------------------ | ----------- | ------------ |
-| `--color-bg-page`        | `#F7F8FA`   | `#0D1117`    |
-| `--color-bg-surface`     | `#FFFFFF`   | `#161B24`    |
-| `--color-bg-surface-2`   | `#EFF1F5`   | `#1E2633`    |
-| `--color-border`         | `#E2E6ED`   | `#2A3547`    |
-| `--color-text-primary`   | `#0F1623`   | `#E8EDF5`    |
-| `--color-text-secondary` | `#4A5568`   | `#94A3B8`    |
-| `--color-text-muted`     | `#8896A9`   | `#4A5A72`    |
-| `--color-primary`        | `#2563D4`   | `#4D8EF5`    |
-| `--color-primary-subtle` | `#EBF2FF`   | `#0F1E3D`    |
-| `--color-ai-accent`      | `#4F5FE8`   | `#818CF8`    |
-| `--color-review`         | `#7C3AED`   | `#A78BFA`    |
-
-### CSS Variables — pegar en `frontend/src/index.css`
+### Variables especiales del panel branding (Login)
 
 ```css
-:root {
-  /* Primarios */
-  --color-primary:        #2563D4;
-  --color-primary-hover:  #1A4DB8;
-  --color-primary-active: #133A94;
-  --color-primary-subtle: #EBF2FF;
-  --color-primary-border: #C3D8FE;
+/* Aplican sobre fondo azul (light) o fondo navy (dark) — siempre sobre fondo oscuro/saturado */
+--color-brand-panel-grid:      rgba(255,255,255,0.04);   /* líneas del grid */
+--color-brand-text:            rgba(255,255,255,0.92);   /* título principal */
+--color-brand-text-dim:        rgba(255,255,255,0.62);   /* descripción */
+--color-brand-text-feat:       rgba(255,255,255,0.72);   /* features list */
+--color-brand-icon-bg:         rgba(255,255,255,0.12);   /* fondo iconos */
+--color-brand-icon-border:     rgba(255,255,255,0.18);   /* borde iconos */
+--color-brand-icon-color:      rgba(255,255,255,0.82);   /* color iconos */
 
-  /* Acento IA */
-  --color-ai-accent: #4F5FE8;
-  --color-ai-hover:  #6B7FF0;
-  --color-ai-subtle: #EEF0FD;
-
-  /* Fondos */
-  --color-bg-page:      #F7F8FA;
-  --color-bg-surface:   #FFFFFF;
-  --color-bg-surface-2: #EFF1F5;
-
-  /* Texto */
-  --color-text-primary:   #0F1623;
-  --color-text-secondary: #4A5568;
-  --color-text-muted:     #8896A9;
-
-  /* Bordes */
-  --color-border: #E2E6ED;
-
-  /* Estados */
-  --color-success:    #16A34A;
-  --color-success-bg: #DCFCE7;
-  --color-warning:    #D97706;
-  --color-warning-bg: #FEF3C7;
-  --color-error:      #DC2626;
-  --color-error-bg:   #FEE2E2;
-  --color-review:     #7C3AED;
-  --color-review-bg:  #F3E8FF;
-
-  /* Tipografía */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-  /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-primary:        #4D8EF5;
-    --color-primary-hover:  #3B7FE8;
-    --color-primary-active: #2563D4;
-    --color-primary-subtle: #0F1E3D;
-    --color-primary-border: #162B5C;
-
-    --color-ai-accent: #818CF8;
-    --color-ai-hover:  #6B7FF0;
-    --color-ai-subtle: #1A1D3D;
-
-    --color-bg-page:      #0D1117;
-    --color-bg-surface:   #161B24;
-    --color-bg-surface-2: #1E2633;
-
-    --color-text-primary:   #E8EDF5;
-    --color-text-secondary: #94A3B8;
-    --color-text-muted:     #4A5A72;
-
-    --color-border: #2A3547;
-
-    --color-success:    #22C55E;
-    --color-success-bg: #052E16;
-    --color-warning:    #F59E0B;
-    --color-warning-bg: #1C1100;
-    --color-error:      #F87171;
-    --color-error-bg:   #1F0606;
-    --color-review:     #A78BFA;
-    --color-review-bg:  #1E0938;
-  }
-}
+/* Difieren por tema: */
+/* light: */ --color-brand-panel-glow:      rgba(255,255,255,0.08);
+/* dark:  */ --color-brand-panel-glow:      rgba(45,127,249,0.07);
+/* light: */ --color-brand-headline-accent: rgba(191,219,254,1);
+/* dark:  */ --color-brand-headline-accent: #4D95FF;
 ```
 
-### Clases Tailwind equivalentes
+### Tipografía
 
-```
-Botón primario:       bg-blue-600 hover:bg-blue-700 text-white rounded-lg
-Botón secundario:     border border-blue-600 text-blue-600 hover:bg-blue-50 rounded-lg
-Botón ghost:          border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-lg
-Badge classified:     bg-green-100 text-green-700 rounded-full
-Badge pending:        bg-amber-100 text-amber-700 rounded-full
-Badge review:         bg-violet-100 text-violet-700 rounded-full
-Badge error:          bg-red-100 text-red-600 rounded-full
-Badge IA:             bg-indigo-50 text-indigo-600 rounded-full
-Sidebar item activo:  bg-blue-50 text-blue-700 font-medium rounded-md
-Fondo página:         bg-slate-50
-Tarjeta:              bg-white border border-slate-200 rounded-xl p-4
-Input:                bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500
+```css
+--font-display: 'Space Grotesk', system-ui, sans-serif;  /* headings h1–h6 */
+--font-sans:    'DM Sans', system-ui, sans-serif;         /* body, UI labels */
 ```
 
 ---

@@ -161,7 +161,7 @@ async def search_documents(
 ) -> list[Document]:
     """
     Búsqueda semántica sobre ocr_text usando PostgreSQL full-text search (índice GIN).
-    Solo retorna documentos clasificados de la organización del usuario autenticado.
+    Retorna documentos con status 'classified' o 'review' de la organización del usuario.
     """
     if not q.strip():
         return []
@@ -173,7 +173,7 @@ async def search_documents(
         db.query(Document)
         .filter(
             Document.organization_id == current_user.organization_id,
-            Document.status == DocStatus.classified,
+            Document.status.in_([DocStatus.classified, DocStatus.review]),
             Document.ocr_text.isnot(None),
             tsvector.op("@@")(tsquery),
         )

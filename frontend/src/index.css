@@ -2,33 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════
+   TEMA CLARO — Deep Navy Tech
+════════════════════════════════════════════════════════ */
 :root {
-  /* Primarios */
-  --color-primary:        #2563D4;
-  --color-primary-hover:  #1A4DB8;
-  --color-primary-active: #133A94;
-  --color-primary-subtle: #EBF2FF;
-  --color-primary-border: #C3D8FE;
+  --color-primary:        #1A5FE8;
+  --color-primary-hover:  #2D7FF9;
+  --color-primary-active: #1248C4;
+  --color-primary-subtle: #EBF3FF;
+  --color-primary-border: #B5D0FB;
 
-  /* Acento IA */
-  --color-ai-accent: #4F5FE8;
-  --color-ai-hover:  #6B7FF0;
-  --color-ai-subtle: #EEF0FD;
+  --color-ai-accent: #5046D4;
+  --color-ai-subtle: #EDEAFF;
 
-  /* Fondos */
-  --color-bg-page:      #F7F8FA;
+  --color-bg-page:      #F1F5FB;
   --color-bg-surface:   #FFFFFF;
-  --color-bg-surface-2: #EFF1F5;
+  --color-bg-surface-2: #E8EFF8;
+  --color-bg-surface-3: #DAE4F2;
 
-  /* Texto */
-  --color-text-primary:   #0F1623;
-  --color-text-secondary: #4A5568;
-  --color-text-muted:     #8896A9;
+  --color-text-primary:   #050B18;
+  --color-text-secondary: #1A3254;
+  --color-text-muted:     #3D5578;
 
-  /* Bordes */
-  --color-border: #E2E6ED;
+  --color-border:       #B0C8E8;
+  --color-border-light: #C8DCEF;
 
-  /* Estados */
   --color-success:    #16A34A;
   --color-success-bg: #DCFCE7;
   --color-warning:    #D97706;
@@ -36,53 +34,203 @@
   --color-error:      #DC2626;
   --color-error-bg:   #FEE2E2;
   --color-review:     #7C3AED;
-  --color-review-bg:  #F3E8FF;
+  --color-review-bg:  #EDE9FE;
 
-  /* Tipografía */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-sans:    'DM Sans', system-ui, sans-serif;
 
-  /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  24px;
+  --radius-full: 9999px;
+
+  /* Sombras — tema claro */
+  --shadow-card:        0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-card-hover:  0 8px 24px rgba(0,0,0,0.11), 0 2px 6px rgba(0,0,0,0.06);
+  --shadow-dropdown:    0 4px 16px rgba(0,0,0,0.11), 0 1px 4px rgba(0,0,0,0.06);
+
+  /* ── Branding panel (Login izquierdo) ── */
+  --color-brand-panel-grid:      rgba(255,255,255,0.04);
+  --color-brand-text:            rgba(255,255,255,0.92);
+  --color-brand-text-dim:        rgba(255,255,255,0.62);
+  --color-brand-text-feat:       rgba(255,255,255,0.72);
+  --color-brand-icon-bg:         rgba(255,255,255,0.12);
+  --color-brand-icon-border:     rgba(255,255,255,0.18);
+  --color-brand-icon-color:      rgba(255,255,255,0.82);
+  --color-brand-panel-glow:      rgba(255,255,255,0.08);
+  --color-brand-headline-accent: rgba(191,219,254,1);
+
+  /* ── ThemeToggle knob (iguales en ambos temas) ── */
+  --color-toggle-sun:  #D97706;
+  --color-toggle-moon: #38BDF8;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-primary:        #4D8EF5;
-    --color-primary-hover:  #3B7FE8;
-    --color-primary-active: #2563D4;
-    --color-primary-subtle: #0F1E3D;
-    --color-primary-border: #162B5C;
+/* ═══════════════════════════════════════════════════════
+   TEMA OSCURO — Deep Navy Tech, OLED-friendly
+════════════════════════════════════════════════════════ */
+html.dark {
+  --color-primary:        #2D7FF9;
+  --color-primary-hover:  #4D95FF;
+  --color-primary-active: #1A65E0;
+  --color-primary-subtle: rgba(45,127,249,0.13);
+  --color-primary-border: rgba(45,127,249,0.30);
 
-    --color-ai-accent: #818CF8;
-    --color-ai-hover:  #6B7FF0;
-    --color-ai-subtle: #1A1D3D;
+  --color-ai-accent: #7059F5;
+  --color-ai-subtle: rgba(112,89,245,0.13);
 
-    --color-bg-page:      #0D1117;
-    --color-bg-surface:   #161B24;
-    --color-bg-surface-2: #1E2633;
+  /* Fondos navy ultra-profundos */
+  --color-bg-page:      #060D1B;
+  --color-bg-surface:   #0C1525;
+  --color-bg-surface-2: #111E36;
+  --color-bg-surface-3: #182745;
 
-    --color-text-primary:   #E8EDF5;
-    --color-text-secondary: #94A3B8;
-    --color-text-muted:     #4A5A72;
+  /* Texto — blanco brillante en dark, nunca gris apagado */
+  --color-text-primary:   #EFF3FF;   /* blanco puro con tinte azulado */
+  --color-text-secondary: #C4D8F0;   /* azul muy claro — claramente legible */
+  --color-text-muted:     #8AABCC;   /* azul medio — visible sobre fondos oscuros */
 
-    --color-border: #2A3547;
+  /* Bordes visibles */
+  --color-border:       rgba(148,180,230,0.25);
+  --color-border-light: rgba(148,180,230,0.13);
 
-    --color-success:    #22C55E;
-    --color-success-bg: #052E16;
-    --color-warning:    #F59E0B;
-    --color-warning-bg: #1C1100;
-    --color-error:      #F87171;
-    --color-error-bg:   #1F0606;
-    --color-review:     #A78BFA;
-    --color-review-bg:  #1E0938;
-  }
+  /* Estados — saturados y visibles en oscuro */
+  --color-success:    #2DD88A;
+  --color-success-bg: rgba(45,216,138,0.12);
+  --color-warning:    #F5C53A;
+  --color-warning-bg: rgba(245,197,58,0.12);
+  --color-error:      #F55858;
+  --color-error-bg:   rgba(245,88,88,0.12);
+  --color-review:     #B07EF5;
+  --color-review-bg:  rgba(176,126,245,0.12);
+
+  /* Sombras — tema oscuro con glow azulado */
+  --shadow-card:        0 2px 4px rgba(0,0,0,0.45), 0 0 0 1px rgba(99,140,210,0.08);
+  --shadow-card-hover:  0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(45,127,249,0.28), 0 0 24px rgba(45,127,249,0.09);
+  --shadow-dropdown:    0 8px 32px rgba(0,0,0,0.65), 0 0 0 1px rgba(99,140,210,0.14);
+
+  /* ── Branding panel — overrides dark ── */
+  --color-brand-panel-glow:      rgba(45,127,249,0.07);
+  --color-brand-headline-accent: #4D95FF;
 }
+
+/* ═══════════════════════════════════════════════════════
+   BASE
+════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
   font-family: var(--font-sans);
   background-color: var(--color-bg-page);
   color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+html       { color-scheme: light; }
+html.dark  { color-scheme: dark; }
+
+/* ═══════════════════════════════════════════════════════
+   SCROLLBAR
+════════════════════════════════════════════════════════ */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 99px;
+  transition: background 200ms;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* ═══════════════════════════════════════════════════════
+   ANIMACIONES GLOBALES
+════════════════════════════════════════════════════════ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Clases utilitarias de animación */
+.anim-fade-in-up  { animation: fadeInUp  0.30s ease both; }
+.anim-fade-in     { animation: fadeIn    0.25s ease both; }
+.anim-slide-left  { animation: slideInLeft 0.25s ease both; }
+.anim-scale-in    { animation: scaleIn   0.20s ease both; }
+
+/* Stagger para listas */
+.anim-stagger > *:nth-child(1) { animation-delay:  0ms; }
+.anim-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.anim-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.anim-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.anim-stagger > *:nth-child(5) { animation-delay: 240ms; }
+
+/* ═══════════════════════════════════════════════════════
+   CARD — elevación en hover
+════════════════════════════════════════════════════════ */
+.card-hover {
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  box-shadow: var(--shadow-card);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  border-color: var(--color-primary-border) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   NAV ITEM — indicador activo animado
+════════════════════════════════════════════════════════ */
+.nav-indicator {
+  position: relative;
+  overflow: hidden;
+}
+.nav-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px; height: 70%;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary);
+  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.nav-indicator.active::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* ═══════════════════════════════════════════════════════
+   GLOW PRIMARIO — para hover en botones / cards en dark
+════════════════════════════════════════════════════════ */
+html.dark .glow-primary-hover:hover {
+  box-shadow: 0 0 0 1px var(--color-primary-border), 0 0 16px rgba(45,127,249,0.15);
 }

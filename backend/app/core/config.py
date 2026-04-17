@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # MinIO
     minio_endpoint: str
     minio_endpoint_local: Optional[str] = None
+    minio_public_endpoint: str = "localhost:9000"  # hostname accesible desde el browser
     minio_access_key: str
     minio_secret_key: str
     minio_bucket: str = "docmind-docs"

@@ -65,3 +65,15 @@ async def logout(current_user: User = Depends(get_current_user)) -> dict:
     El token JWT es stateless; el cliente debe descartarlo.
     """
     return {"detail": "Sesión cerrada correctamente"}
+
+@router.get("/me", summary="Usuario actual")
+async def get_me(current_user: User = Depends(get_current_user)) -> dict:
+    """Retorna los datos del usuario autenticado."""
+    return {
+        "id": str(current_user.id),
+        "name": current_user.name,
+        "email": current_user.email,
+        "role": current_user.role.value,
+        "organization_id": str(current_user.organization_id),
+        "active": current_user.active,
+    }
