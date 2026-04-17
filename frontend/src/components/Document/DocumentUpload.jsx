@@ -1,11 +1,12 @@
-import { useState, useRef, useCallback } from 'react'
-import { Upload, X, FileText, Image, CheckCircle2, AlertCircle } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Upload, X, FileText, Image, CheckCircle2, AlertCircle, Camera } from 'lucide-react'
 import { uploadDocument } from '../../services/api/documents'
 import { useToast } from '../../context/ToastContext'
 import Button from '../UI/Button'
 import clsx from 'clsx'
 
 const ACCEPTED = ['.pdf', '.jpg', '.jpeg', '.png']
+const ACCEPTED_CAMERA = ['image/jpeg', 'image/png']
 const MAX_MB = 20
 const MAX_BYTES = MAX_MB * 1024 * 1024
 
@@ -14,6 +15,13 @@ function getFileError(file) {
   if (!ACCEPTED.includes(ext)) return `Tipo no permitido (${ext}). Solo PDF, JPG, PNG.`
   if (file.size > MAX_BYTES) return `El archivo supera ${MAX_MB} MB.`
   return null
+}
+
+function detectMobile() {
+  return (
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && window.innerWidth < 1024)
+  )
 }
 
 /** @param {{ onSuccess?: (doc: object) => void, onClose?: () => void }} props */
@@ -25,7 +33,15 @@ export default function DocumentUpload({ onSuccess, onClose }) {
   const [uploading, setUploading] = useState(false)
   const [uploaded, setUploaded] = useState(null)
   const [error, setError] = useState(null)
+  const [isMobile, setIsMobile] = useState(detectMobile)
   const inputRef = useRef()
+  const cameraInputRef = useRef()
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(detectMobile())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const handleFile = useCallback((f) => {
     const err = getFileError(f)
@@ -45,6 +61,21 @@ export default function DocumentUpload({ onSuccess, onClose }) {
   const onInputChange = (e) => {
     const f = e.target.files[0]
     if (f) handleFile(f)
+  }
+
+  const handleCameraCapture = (e) => {
+    const f = e.target.files[0]
+    e.target.value = ''
+    if (!f) return
+    if (!ACCEPTED_CAMERA.includes(f.type)) {
+      toast.error('Archivo inválido', 'Solo se permiten imágenes JPG o PNG')
+      return
+    }
+    if (f.size > MAX_BYTES) {
+      toast.error('Archivo demasiado grande', `El archivo supera ${MAX_MB} MB`)
+      return
+    }
+    handleFile(f)
   }
 
   const handleUpload = async () => {
@@ -113,6 +144,41 @@ export default function DocumentUpload({ onSuccess, onClose }) {
           PDF, JPG, PNG · máx. {MAX_MB} MB
         </p>
       </div>
+
+      {/* Camera capture — mobile only */}
+      {isMobile && (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-[var(--color-border)]" />
+            <span className="text-xs text-[var(--color-text-muted)] shrink-0">o</span>
+            <div className="flex-1 h-px bg-[var(--color-border)]" />
+          </div>
+
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/jpeg,image/png"
+            capture="environment"
+            className="hidden"
+            onChange={handleCameraCapture}
+          />
+
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className={clsx(
+              'w-full bg-[var(--color-bg-surface-2)] border border-dashed border-[var(--color-border)]',
+              'rounded-[var(--radius-lg)] py-4 flex flex-col items-center gap-2',
+              'text-sm text-[var(--color-text-secondary)] cursor-pointer',
+              'hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]',
+              'transition-colors duration-200'
+            )}
+          >
+            <Camera size={20} />
+            <span>Tomar foto</span>
+          </button>
+        </>
+      )}
 
       {/* File preview */}
       {file && (
