@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.core.security import verify_password, create_access_token
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 
 @router.post("/login", response_model=Token, summary="Iniciar sesión")
+@limiter.limit("10/minute", error_message="Demasiados intentos. Espera un minuto antes de intentar de nuevo.")
 async def login(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),

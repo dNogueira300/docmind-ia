@@ -95,8 +95,11 @@ def client(db: Session, admin_user: User, editor_user: User) -> TestClient:
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
+    # Deshabilitar rate limiting en tests para evitar 429 por IP compartida
+    app.state.limiter.enabled = False
     with TestClient(app) as c:
         yield c
+    app.state.limiter.enabled = True
     app.dependency_overrides.clear()
 
 

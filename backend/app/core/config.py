@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     minio_bucket: str = "docmind-docs"
     minio_secure: bool = False
 
+    # CORS
+    allowed_origins: list[str] = ["*"]
+
     # Entorno
     environment: str = "development"
     running_in_docker: bool = False  # ← inyectada por docker-compose

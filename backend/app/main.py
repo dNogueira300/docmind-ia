@@ -4,8 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.api import auth, users, categories, documents, audit_log
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -46,6 +49,8 @@ async def lifespan(app: FastAPI):
 
 
 # ── Aplicación ────────────────────────────────────────────────────────────────
+_is_prod = settings.environment == "production"
+
 app = FastAPI(
     title="DocMind IA",
     description=(
@@ -53,19 +58,35 @@ app = FastAPI(
         "Equipo: Error 404 | Backend: FastAPI + PostgreSQL + MinIO"
     ),
     version="0.2.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
     lifespan=lifespan,
 )
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.environment == "development" else [],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Middleware de seguridad — headers HTTP ────────────────────────────────────
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 # ── Middleware de logging de requests ─────────────────────────────────────────

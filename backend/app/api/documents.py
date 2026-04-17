@@ -1,4 +1,5 @@
 """Endpoints de documentos: subida, listado, detalle, reclasificación, eliminación."""
+import logging
 from datetime import datetime
 from uuid import UUID, uuid4
 from typing import Annotated, Optional
@@ -7,6 +8,8 @@ from fastapi import (
     APIRouter, BackgroundTasks, Depends, HTTPException,
     UploadFile, File, Request, status, Query,
 )
+
+logger = logging.getLogger("docmind.documents")
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -35,11 +38,23 @@ ALLOWED_MAGIC: dict[bytes, str] = {
 MAX_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
-def _detect_file_type(header: bytes) -> str:
+ALLOWED_CONTENT_TYPES: set[str] = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+}
+
+
+def _detect_file_type(header: bytes, ip: str | None = None, filename: str | None = None) -> str:
     """Detecta el tipo de archivo por magic bytes. Lanza 422 si no es permitido."""
     for magic, ftype in ALLOWED_MAGIC.items():
         if header.startswith(magic):
             return ftype
+    logger.warning(
+        "SEGURIDAD | archivo rechazado | ip=%s | filename=%s | motivo=magic_bytes_invalidos",
+        ip,
+        filename,
+    )
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail="Tipo de archivo no permitido. Solo se aceptan PDF, JPG y PNG.",
@@ -93,15 +108,49 @@ async def upload_document(
     Sube un documento a MinIO y crea el registro en BD con status=pending.
     El OCR y la clasificación IA corren en background (Hito 3).
     """
-    # Leer los primeros 12 bytes para detectar tipo
+    ip = request.client.host if request.client else None
+    filename = file.filename or "documento"
+
+    # Validar Content-Type declarado
+    if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
+        logger.warning(
+            "SEGURIDAD | archivo rechazado | ip=%s | filename=%s | motivo=content_type_invalido | content_type=%s",
+            ip,
+            filename,
+            file.content_type,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Tipo de archivo no permitido. Solo se aceptan PDF, JPG y PNG.",
+        )
+
+    # Leer los primeros 12 bytes para detectar tipo por magic bytes
     header = await file.read(12)
-    file_type = _detect_file_type(header)
+
+    if len(header) == 0:
+        logger.warning(
+            "SEGURIDAD | archivo rechazado | ip=%s | filename=%s | motivo=archivo_vacio",
+            ip,
+            filename,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo no puede estar vacío.",
+        )
+
+    file_type = _detect_file_type(header, ip=ip, filename=filename)
 
     # Leer el resto del archivo
     rest = await file.read()
     file_data = header + rest
 
     if len(file_data) > MAX_SIZE_BYTES:
+        logger.warning(
+            "SEGURIDAD | archivo rechazado | ip=%s | filename=%s | motivo=excede_20mb | size_bytes=%d",
+            ip,
+            filename,
+            len(file_data),
+        )
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="El archivo supera el límite de 20 MB",
@@ -135,7 +184,6 @@ async def upload_document(
     db.refresh(doc)
 
     # Auditoría
-    ip = request.client.host if request.client else None
     log_action(
         db=db,
         user_id=current_user.id,

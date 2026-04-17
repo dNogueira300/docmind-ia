@@ -32,3 +32,6 @@ pydantic[email]==2.11.5
 pydantic-settings==2.13.1
 pydantic[email]==2.11.5
 email-validator==2.2.0
+
+# Rate limiting
+slowapi==0.1.9

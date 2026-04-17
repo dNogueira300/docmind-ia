@@ -106,3 +106,41 @@ Files are never publicly accessible. Access only via signed URLs with expiration
 - Accepted file types: PDF, JPG, PNG only
 - JWT tokens expire in 8 hours; bcrypt with minimum 12 rounds
 - Cross-organization data isolation must be enforced at every query level
+
+## Security
+
+### Rate limiting
+- Login endpoint (`POST /api/v1/auth/login`) is limited to **10 requests/minute per IP** via `slowapi`.
+- Exceeding the limit returns HTTP 429 with message: `"Demasiados intentos. Espera un minuto antes de intentar de nuevo."`
+- The shared `Limiter` instance lives in `backend/app/core/limiter.py`.
+
+### CORS
+- Allowed origins are controlled by the `ALLOWED_ORIGINS` env variable (parsed as a JSON list).
+- Development default: `["*"]`
+- Production (Railway): set to `["https://your-frontend.railway.app"]`
+
+### Swagger / OpenAPI docs
+- With `ENVIRONMENT=production`: `/docs`, `/redoc`, and `/openapi.json` return 404 (disabled at app creation).
+- With `ENVIRONMENT=development` (default): all three are available normally.
+
+### SECRET_KEY
+- Never commit a real `SECRET_KEY` to the repository.
+- Minimum 64 hex characters. Generate with: `python -c "import secrets; print(secrets.token_hex(32))"`
+
+### audit_log
+- The `audit_log` table is **immutable**: never issue `UPDATE` or `DELETE` against it — only `INSERT`.
+- Every document operation (`upload`, `view`, `download`, `reclassify`, `delete`) must be logged.
+
+### HTTP Security Headers
+All responses include the following headers (set by the `security_headers` middleware in `main.py`):
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+
+### File upload security
+- Files are validated by magic bytes (not just extension or `Content-Type`).
+- Empty files (0 bytes) are rejected with HTTP 400.
+- Files with an invalid declared `Content-Type` are rejected with HTTP 422.
+- Files over 20 MB are rejected with HTTP 413.
+- All rejections are logged (WARNING level) including IP, filename, and reason.
