@@ -1,4 +1,4 @@
-import { LogOut, ChevronDown, Menu } from 'lucide-react'
+import { LogOut, ChevronDown, Menu, Building2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import Badge from '../UI/Badge'
@@ -8,7 +8,7 @@ import ThemeToggle from '../UI/ThemeToggle'
  * @param {{ title: string, onToggleSidebar: () => void }} props
  */
 export default function TopBar({ title, onToggleSidebar }) {
-  const { user, logout } = useAuth()
+  const { user, logout, activeOrganization, isSuperAdmin } = useAuth()
   const [open, setOpen] = useState(false)
   const initial = user?.name?.[0]?.toUpperCase() ?? '?'
 
@@ -22,11 +22,11 @@ export default function TopBar({ title, onToggleSidebar }) {
         boxShadow: '0 1px 0 var(--color-border)',
       }}
     >
-      {/* Izquierda: hamburger + título */}
-      <div className="flex items-center gap-2">
+      {/* Izquierda: hamburger + título + chip de empresa */}
+      <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onToggleSidebar}
-          className="p-1.5 rounded-[var(--radius-md)] transition-colors"
+          className="p-1.5 rounded-[var(--radius-md)] transition-colors shrink-0"
           style={{ color: 'var(--color-text-muted)' }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-bg-surface-2)')}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -35,9 +35,48 @@ export default function TopBar({ title, onToggleSidebar }) {
           <Menu size={18} />
         </button>
 
-        <h1 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <h1 className="text-base font-semibold shrink-0" style={{ color: 'var(--color-text-primary)' }}>
           {title}
         </h1>
+
+        {/* Chip de empresa activa */}
+        {activeOrganization ? (
+          <span
+            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium truncate max-w-[280px]"
+            style={{
+              backgroundColor: 'var(--color-primary-subtle)',
+              color: 'var(--color-primary)',
+              border: '1px solid var(--color-primary-border)',
+            }}
+            title={activeOrganization.name}
+          >
+            <Building2 size={12} className="shrink-0" />
+            <span className="truncate">{activeOrganization.name}</span>
+            {isSuperAdmin && (
+              <span
+                className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide shrink-0"
+                style={{
+                  backgroundColor: 'var(--color-ai-subtle)',
+                  color: 'var(--color-ai-accent)',
+                }}
+              >
+                super
+              </span>
+            )}
+          </span>
+        ) : isSuperAdmin ? (
+          <span
+            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+            style={{
+              backgroundColor: 'var(--color-ai-subtle)',
+              color: 'var(--color-ai-accent)',
+              border: '1px solid var(--color-primary-border)',
+            }}
+          >
+            <ShieldCheck size={12} />
+            Super admin · todas las empresas
+          </span>
+        ) : null}
       </div>
 
       {/* Derecha: toggle tema + separador + user */}
@@ -87,20 +126,40 @@ export default function TopBar({ title, onToggleSidebar }) {
             <>
               <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
               <div
-                className="absolute right-0 top-full mt-1.5 z-20 w-48 rounded-[var(--radius-lg)] py-1 anim-scale-in"
+                className="absolute right-0 top-full mt-1.5 z-20 w-60 max-w-[calc(100vw-1rem)] rounded-[var(--radius-lg)] py-1 anim-scale-in"
                 style={{
                   backgroundColor: 'var(--color-bg-surface)',
                   border: '1px solid var(--color-border)',
                   boxShadow: 'var(--shadow-dropdown)',
                 }}
               >
-                <div className="px-3 py-2.5" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                <div className="px-3 py-2.5 min-w-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                  <p
+                    className="text-xs font-medium truncate"
+                    style={{ color: 'var(--color-text-primary)' }}
+                    title={user?.name}
+                  >
                     {user?.name}
                   </p>
-                  <p className="text-xs truncate mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                  <p
+                    className="text-xs truncate mt-0.5"
+                    style={{ color: 'var(--color-text-muted)' }}
+                    title={user?.email}
+                  >
                     {user?.email}
                   </p>
+                  {activeOrganization && (
+                    <div
+                      className="flex items-center gap-1 mt-1.5 min-w-0"
+                      style={{ color: 'var(--color-primary)' }}
+                      title={activeOrganization.name}
+                    >
+                      <Building2 size={11} className="shrink-0" />
+                      <span className="text-xs truncate min-w-0 flex-1">
+                        {activeOrganization.name}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => { setOpen(false); logout() }}

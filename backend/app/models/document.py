@@ -50,6 +50,7 @@ class Document(Base):
     )
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
     stored_path: Mapped[str] = mapped_column(Text, nullable=False)
+    digitalized_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)
     file_size_kb: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -74,3 +75,8 @@ class Document(Base):
         back_populates="documents", foreign_keys=[uploaded_by]
     )
     audit_entries: Mapped[list["AuditLog"]] = relationship(back_populates="document")
+
+    @property
+    def has_digitalized(self) -> bool:
+        """True si ya existe el archivo .docx digitalizado tras el OCR."""
+        return bool(self.digitalized_path)

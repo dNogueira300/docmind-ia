@@ -2,10 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema para Tesseract OCR y psycopg2
+# Instalar dependencias del sistema:
+#   - tesseract + idioma español → OCR
+#   - poppler-utils              → pdf2image (rasteriza PDFs escaneados de N páginas)
+#   - libpq-dev + gcc            → psycopg2-binary
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-spa \
+    poppler-utils \
     libpq-dev \
     gcc \
     && rm -rf /var/lib/apt/lists/*

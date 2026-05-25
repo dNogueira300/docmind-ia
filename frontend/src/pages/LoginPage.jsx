@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import {
   Eye, EyeOff, BrainCircuit, AlertCircle,
-  FileSearch2, Sparkles, ShieldCheck,
+  FileSearch2, Sparkles, ShieldCheck, Building2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useToast } from '../context/ToastContext'
 import ThemeToggle from '../components/UI/ThemeToggle'
+import { getOrganizationBySlug } from '../services/api/organizations'
 
 const FEATURES = [
   { icon: FileSearch2,  text: 'OCR automático en PDF, JPG y PNG' },
@@ -18,15 +20,33 @@ export default function LoginPage() {
   const { login, loading } = useAuth()
   const { isDark } = useTheme()
   const toast = useToast()
+  const { tenantSlug: urlSlug } = useParams()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
+  const [orgSlug,  setOrgSlug]  = useState(urlSlug || '')
+  const [orgInfo,  setOrgInfo]  = useState(null)  // { name, ... } o null
   const [showPass, setShowPass] = useState(false)
   const [error,    setError]    = useState('')
+
+  // Si vino slug en la URL, resolverlo para mostrar el nombre de la empresa.
+  useEffect(() => {
+    if (!urlSlug) return
+    getOrganizationBySlug(urlSlug)
+      .then((org) => { setOrgInfo(org); setOrgSlug(org.slug) })
+      .catch(() => {
+        setError(`La empresa "${urlSlug}" no existe o está desactivada.`)
+        setOrgInfo(null)
+      })
+  }, [urlSlug])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    const result = await login(email, password)
+    // Si el campo "Empresa" queda vacío, no se envía slug. El backend solo
+    // permite login sin slug si el usuario es super_admin — para usuarios
+    // regulares devuelve un error claro que se muestra al pie del formulario.
+    const slugToSend = orgSlug.trim() || null
+    const result = await login(email, password, slugToSend)
     if (!result.ok) {
       setError(result.error)
       toast.error('Error de autenticación', result.error)
@@ -165,11 +185,42 @@ export default function LoginPage() {
             Bienvenido de nuevo
           </h2>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-            Inicia sesión en tu espacio de trabajo
+            {orgInfo
+              ? <>Inicia sesión en <span className="font-medium" style={{ color: 'var(--color-primary)' }}>{orgInfo.name}</span></>
+              : 'Inicia sesión en tu espacio de trabajo'}
           </p>
 
           {/* Formulario */}
           <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+
+            {/* Empresa (solo si no vino preseteada en la URL) */}
+            {!orgInfo && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-secondary)' }}>
+                  Empresa
+                </label>
+                <div className="relative">
+                  <Building2
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2"
+                    style={{ color: 'var(--color-text-muted)' }}
+                  />
+                  <input
+                    type="text"
+                    value={orgSlug}
+                    onChange={(e) => setOrgSlug(e.target.value.toLowerCase())}
+                    placeholder="maynas, abogados, ..."
+                    autoComplete="organization"
+                    className="w-full h-10 pl-10 pr-3 text-sm rounded-[var(--radius-md)]"
+                    style={{
+                      backgroundColor: 'var(--color-bg-surface)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Email */}
             <div className="flex flex-col gap-1.5">

@@ -1,9 +1,9 @@
-"""Modelo de la tabla organizations (raíz de multitenancy)."""
+"""Modelo de la tabla organizations (raíz multi-tenant SaaS)."""
 from datetime import datetime
 from uuid import UUID
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, text
+from sqlalchemy import String, Boolean, DateTime, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -21,8 +21,18 @@ class Organization(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Identificador URL-friendly único por sistema. Ej: "maynas", "abogados".
+    slug: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    # Si está en False, los usuarios de esta org no pueden iniciar sesión.
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=text("NOW()"),
+        onupdate=datetime.utcnow,
     )
 
     # Relaciones

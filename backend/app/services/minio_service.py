@@ -57,13 +57,55 @@ def upload_file(
     return stored_path
 
 
-def get_presigned_url(stored_path: str, expires_seconds: int = 3600) -> str:
-    """Genera URL firmada accesible desde el browser via hosts file."""
+def upload_digitalized_docx(
+    docx_bytes: bytes,
+    original_stored_path: str,
+) -> str:
+    """
+    Sube el .docx digitalizado junto al original.
+
+    Toma el `stored_path` del original y le agrega el sufijo `.digitalized.docx`,
+    manteniendo la misma jerarquía de carpetas (org_id/year/month/).
+    """
+    digitalized_path = f"{original_stored_path}.digitalized.docx"
+
     client = _get_client()
+    client.put_object(
+        bucket_name=settings.minio_bucket,
+        object_name=digitalized_path,
+        data=io.BytesIO(docx_bytes),
+        length=len(docx_bytes),
+        content_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+    )
+    return digitalized_path
+
+
+def get_presigned_url(
+    stored_path: str,
+    expires_seconds: int = 3600,
+    response_filename: str | None = None,
+) -> str:
+    """
+    Genera URL firmada accesible desde el browser via hosts file.
+
+    Si `response_filename` se pasa, fuerza un nombre amigable al descargar
+    (Content-Disposition: attachment; filename=...).
+    """
+    client = _get_client()
+    response_headers: dict | None = None
+    if response_filename:
+        response_headers = {
+            "response-content-disposition": (
+                f'attachment; filename="{response_filename}"'
+            )
+        }
     return client.presigned_get_object(
         bucket_name=settings.minio_bucket,
         object_name=stored_path,
         expires=timedelta(seconds=expires_seconds),
+        response_headers=response_headers,
     )
 
 

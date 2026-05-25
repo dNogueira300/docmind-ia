@@ -31,7 +31,7 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: UUID
-    organization_id: UUID
+    organization_id: Optional[UUID] = None  # None solo para super_admin
     name: str
     email: str
     role: UserRole

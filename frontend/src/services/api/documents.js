@@ -33,7 +33,19 @@ export async function getDocument(id) {
 /** @param {string} id */
 export async function getDownloadUrl(id) {
   const { data } = await client.get(`/api/v1/documents/${id}/download-url`)
-  return data // { download_url, expires_in_seconds } — URL ya generada con localhost:9000
+  return data // { download_url, expires_in_seconds }
+}
+
+/** URL firmada inline para previsualizar el archivo original (sin auditar). */
+export async function getPreviewUrl(id) {
+  const { data } = await client.get(`/api/v1/documents/${id}/preview-url`)
+  return data // { preview_url, file_type, expires_in_seconds }
+}
+
+/** URL firmada para descargar el .docx digitalizado generado tras el OCR. */
+export async function getDigitalizedUrl(id) {
+  const { data } = await client.get(`/api/v1/documents/${id}/digitalized-url`)
+  return data // { download_url, expires_in_seconds }
 }
 
 /** @param {string} id @param {string} categoryId */

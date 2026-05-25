@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     running_in_docker: bool = False  # ← inyectada por docker-compose
 
+    # Super admin bootstrap (creado por main.py::_ensure_super_admin())
+    super_admin_email: str = "superadmin@docmind.local"
+    super_admin_password: Optional[str] = None  # REQUERIDO en producción
+
     @property
     def db_url(self) -> str:
         """Usa URL local solo cuando NO estamos en Docker."""

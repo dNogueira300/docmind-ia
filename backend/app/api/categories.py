@@ -1,4 +1,4 @@
-"""CRUD de categorías — personalizables por organización."""
+"""CRUD de categorías — aisladas por tenant (multi-tenant)."""
 from uuid import UUID
 from typing import Annotated
 
@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_role, get_current_user
+from app.core.deps import (
+    require_role, get_current_user, get_active_organization_id,
+    require_company_admin,
+)
 from app.models.user import User
 from app.models.category import Category
 from app.models.document import Document
@@ -14,21 +17,23 @@ from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryRespons
 
 router = APIRouter(prefix="/categories", tags=["Categorías"])
 
-AdminOnly = Annotated[User, Depends(require_role("admin"))]
+# `admin` (de la empresa) y `super_admin` (operando vía X-Active-Tenant)
+CompanyAdmin = Annotated[User, Depends(require_company_admin)]
 AnyRole = Annotated[User, Depends(get_current_user)]
 
 
 @router.get("/", response_model=list[CategoryResponse], summary="Listar categorías")
 async def list_categories(
     current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 20,
 ) -> list[Category]:
-    """Lista las categorías de la organización del usuario."""
+    """Lista las categorías de la empresa activa."""
     return (
         db.query(Category)
-        .filter(Category.organization_id == current_user.organization_id)
+        .filter(Category.organization_id == organization_id)
         .offset(skip)
         .limit(limit)
         .all()
@@ -40,13 +45,14 @@ async def list_categories(
 )
 async def create_category(
     data: CategoryCreate,
-    current_user: AdminOnly,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> Category:
-    """Crea una nueva categoría. Máximo 10 por organización (prototipo)."""
+    """Crea una nueva categoría en la empresa activa. Máximo 10 por organización."""
     total = (
         db.query(Category)
-        .filter(Category.organization_id == current_user.organization_id)
+        .filter(Category.organization_id == organization_id)
         .count()
     )
     if total >= 10:
@@ -58,7 +64,7 @@ async def create_category(
     existing = (
         db.query(Category)
         .filter(
-            Category.organization_id == current_user.organization_id,
+            Category.organization_id == organization_id,
             Category.name == data.name,
         )
         .first()
@@ -70,7 +76,7 @@ async def create_category(
         )
 
     category = Category(
-        organization_id=current_user.organization_id,
+        organization_id=organization_id,
         name=data.name,
         description=data.description,
         color=data.color,
@@ -85,15 +91,15 @@ async def create_category(
 async def update_category(
     category_id: UUID,
     data: CategoryUpdate,
-    current_user: AdminOnly,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> Category:
-    """Edita nombre, descripción o color de una categoría."""
     category = (
         db.query(Category)
         .filter(
             Category.id == category_id,
-            Category.organization_id == current_user.organization_id,
+            Category.organization_id == organization_id,
         )
         .first()
     )
@@ -115,7 +121,8 @@ async def update_category(
 @router.delete("/{category_id}", summary="Eliminar categoría")
 async def delete_category(
     category_id: UUID,
-    current_user: AdminOnly,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -126,14 +133,13 @@ async def delete_category(
         db.query(Category)
         .filter(
             Category.id == category_id,
-            Category.organization_id == current_user.organization_id,
+            Category.organization_id == organization_id,
         )
         .first()
     )
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
 
-    # Desvincular documentos (category_id → NULL)
     db.query(Document).filter(Document.category_id == category_id).update(
         {"category_id": None}
     )

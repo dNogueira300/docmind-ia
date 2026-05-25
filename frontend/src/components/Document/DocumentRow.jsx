@@ -1,8 +1,7 @@
 import { Image, MoreVertical, Download, Eye, RefreshCw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
 import Badge from '../UI/Badge'
+import ActionMenu from '../UI/ActionMenu'
 import { useAuth } from '../../context/AuthContext'
-import clsx from 'clsx'
 
 function FileIcon({ type }) {
   const base = 'w-8 h-8 rounded-[var(--radius-md)] flex items-center justify-center shrink-0 text-[10px] font-semibold'
@@ -42,10 +41,22 @@ function formatSize(kb) {
  */
 export default function DocumentRow({ doc, categories = [], onView, onDownload, onReclassify, onDelete }) {
   const { isAdmin, isEditor } = useAuth()
-  const [menuOpen, setMenuOpen] = useState(false)
 
   const category = categories.find((c) => c.id === doc.category_id)
   const score    = doc.ai_confidence_score
+  const canReclassify = isEditor && doc.status !== 'pending' && doc.status !== 'processing'
+
+  // Items del menú — ActionMenu se renderiza en portal y maneja auto-flip
+  const menuItems = [
+    { label: 'Ver detalle',  icon: Eye,       onClick: () => onView?.(doc) },
+    { label: 'Descargar',    icon: Download,  onClick: () => onDownload?.(doc) },
+    ...(canReclassify
+      ? [{ label: 'Reclasificar', icon: RefreshCw, onClick: () => onReclassify?.(doc) }]
+      : []),
+    ...(isAdmin
+      ? [{ label: 'Eliminar', icon: Trash2, onClick: () => onDelete?.(doc), danger: true }]
+      : []),
+  ]
 
   return (
     <tr
@@ -133,62 +144,26 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
         </span>
       </td>
 
-      {/* Acciones */}
+      {/* Acciones — el portal de ActionMenu se renderiza en document.body */}
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-        <div className="relative flex justify-end">
-          <button
-            className="p-1.5 rounded-[var(--radius-sm)] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-            style={{ color: 'var(--color-text-muted)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-bg-surface-2)')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            <MoreVertical size={14} />
-          </button>
-
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div
-                className="absolute right-0 top-full mt-1 z-20 w-40 rounded-[var(--radius-lg)] py-1"
-                style={{
-                  backgroundColor: 'var(--color-bg-surface)',
-                  border: '1px solid var(--color-border)',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                }}
+        <div className="flex justify-end">
+          <ActionMenu
+            align="right"
+            items={menuItems}
+            trigger={
+              <button
+                className="p-1.5 rounded-[var(--radius-sm)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+                style={{ color: 'var(--color-text-muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-bg-surface-2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                aria-label="Acciones"
               >
-                <MenuBtn icon={Eye}      label="Ver detalle"  onClick={() => { setMenuOpen(false); onView?.(doc) }} />
-                <MenuBtn icon={Download} label="Descargar"    onClick={() => { setMenuOpen(false); onDownload?.(doc) }} />
-                {isEditor && doc.status !== 'pending' && doc.status !== 'processing' && (
-                  <MenuBtn icon={RefreshCw} label="Reclasificar" onClick={() => { setMenuOpen(false); onReclassify?.(doc) }} />
-                )}
-                {isAdmin && (
-                  <MenuBtn icon={Trash2} label="Eliminar" onClick={() => { setMenuOpen(false); onDelete?.(doc) }} danger />
-                )}
-              </div>
-            </>
-          )}
+                <MoreVertical size={14} />
+              </button>
+            }
+          />
         </div>
       </td>
     </tr>
-  )
-}
-
-function MenuBtn({ icon: Icon, label, onClick, danger }) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors duration-100"
-      style={{ color: danger ? 'var(--color-error)' : 'var(--color-text-secondary)' }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = danger
-          ? 'var(--color-error-bg)'
-          : 'var(--color-bg-surface-2)'
-      }}
-      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-    >
-      <Icon size={13} />
-      {label}
-    </button>
   )
 }

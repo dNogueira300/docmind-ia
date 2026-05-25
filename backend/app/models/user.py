@@ -2,7 +2,7 @@
 import enum
 from datetime import datetime
 from uuid import UUID
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import String, Boolean, DateTime, ForeignKey, text
 from sqlalchemy import Enum as SAEnum
@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 
 
 class UserRole(str, enum.Enum):
-    admin = "admin"
+    """Roles disponibles. `super_admin` es global (sin organización)."""
+    super_admin = "super_admin"
+    admin = "admin"       # admin de su empresa (tenant admin)
     editor = "editor"
     consultor = "consultor"
 
@@ -30,10 +32,11 @@ class User(Base):
         PGUUID(as_uuid=True), primary_key=True,
         server_default=text("gen_random_uuid()")
     )
-    organization_id: Mapped[UUID] = mapped_column(
+    # NULLABLE solo para super_admin (constraint a nivel BD lo asegura).
+    organization_id: Mapped[Optional[UUID]] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -49,8 +52,12 @@ class User(Base):
     )
 
     # Relaciones
-    organization: Mapped["Organization"] = relationship(back_populates="users")
+    organization: Mapped[Optional["Organization"]] = relationship(back_populates="users")
     documents: Mapped[list["Document"]] = relationship(
         back_populates="uploader", foreign_keys="Document.uploaded_by"
     )
     audit_entries: Mapped[list["AuditLog"]] = relationship(back_populates="user")
+
+    @property
+    def is_super_admin(self) -> bool:
+        return self.role == UserRole.super_admin

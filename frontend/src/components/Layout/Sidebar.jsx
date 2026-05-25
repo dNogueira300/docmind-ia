@@ -8,21 +8,27 @@ import {
   ScrollText,
   LayoutDashboard,
   BrainCircuit,
+  Building2,
 } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../context/AuthContext";
 import ThemeToggle from "../UI/ThemeToggle";
 
+// Links del tenant — el prefijo /:slug se agrega dinámicamente abajo
 const NAV_ALL = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/documents", label: "Documentos", icon: Files },
-  { to: "/search", label: "Búsqueda", icon: Search },
+  { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "documents", label: "Documentos", icon: Files },
+  { path: "search", label: "Búsqueda", icon: Search },
 ];
-const NAV_EDITOR = [{ to: "/upload", label: "Subir archivo", icon: Upload }];
+const NAV_EDITOR = [{ path: "upload", label: "Subir archivo", icon: Upload }];
 const NAV_ADMIN = [
-  { to: "/categories", label: "Categorías", icon: Tag },
-  { to: "/users", label: "Usuarios", icon: Users },
-  { to: "/audit", label: "Auditoría", icon: ScrollText },
+  { path: "categories", label: "Categorías", icon: Tag },
+  { path: "users", label: "Usuarios", icon: Users },
+  { path: "audit", label: "Auditoría", icon: ScrollText },
+];
+// Links exclusivos super_admin (sin prefijo de tenant)
+const NAV_SUPER = [
+  { to: "/admin/organizations", label: "Empresas", icon: Building2 },
 ];
 
 function NavItem({ to, label, icon: Icon, open }) {
@@ -89,7 +95,11 @@ function Divider() {
  * @param {{ open: boolean, mobile: boolean }} props
  */
 export default function Sidebar({ open, mobile = false }) {
-  const { isAdmin, isEditor } = useAuth();
+  const { isAdmin, isEditor, isSuperAdmin, tenantSlug, organization } = useAuth();
+
+  // Construye href: /:slug/path. Si no hay slug (super_admin sin tenant
+  // activo), usa la ruta tal cual (no la prefija con nada).
+  const link = (path) => (tenantSlug ? `/${tenantSlug}/${path}` : `/${path}`);
 
   return (
     <aside
@@ -146,8 +156,23 @@ export default function Sidebar({ open, mobile = false }) {
           open || mobile ? "px-3" : "px-2",
         )}
       >
+        {/* Banner del tenant activo (visible cuando hay slug) */}
+        {(open || mobile) && organization && (
+          <div
+            className="mb-2 px-3 py-2 rounded-[var(--radius-md)] flex items-center gap-2"
+            style={{
+              backgroundColor: "var(--color-primary-subtle)",
+              border: "1px solid var(--color-primary-border)",
+              color: "var(--color-primary)",
+            }}
+          >
+            <Building2 size={13} className="shrink-0" />
+            <span className="text-xs font-medium truncate">{organization.name}</span>
+          </div>
+        )}
+
         {NAV_ALL.map((item) => (
-          <NavItem key={item.to} {...item} open={open || mobile} />
+          <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
         ))}
 
         {isEditor && (
@@ -158,7 +183,7 @@ export default function Sidebar({ open, mobile = false }) {
               <Divider />
             )}
             {NAV_EDITOR.map((item) => (
-              <NavItem key={item.to} {...item} open={open || mobile} />
+              <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
             ))}
           </>
         )}
@@ -171,6 +196,19 @@ export default function Sidebar({ open, mobile = false }) {
               <Divider />
             )}
             {NAV_ADMIN.map((item) => (
+              <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
+            ))}
+          </>
+        )}
+
+        {isSuperAdmin && (
+          <>
+            {open || mobile ? (
+              <SectionLabel>Super admin</SectionLabel>
+            ) : (
+              <Divider />
+            )}
+            {NAV_SUPER.map((item) => (
               <NavItem key={item.to} {...item} open={open || mobile} />
             ))}
           </>

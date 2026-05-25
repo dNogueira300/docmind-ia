@@ -1,4 +1,4 @@
-"""Endpoint de auditoría — solo administradores."""
+"""Endpoint de auditoría — aislado por tenant."""
 from datetime import datetime
 from uuid import UUID
 from typing import Annotated, Optional
@@ -7,19 +7,20 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_role
-from app.models.user import User
+from app.core.deps import require_company_admin, get_active_organization_id
+from app.models.user import User as UserModel
 from app.models.audit_log import AuditLog, AuditAction
 from app.schemas.audit_log import AuditLogResponse
 
 router = APIRouter(prefix="/audit-log", tags=["Auditoría"])
 
-AdminOnly = Annotated[User, Depends(require_role("admin"))]
+CompanyAdmin = Annotated[UserModel, Depends(require_company_admin)]
 
 
 @router.get("/", response_model=list[AuditLogResponse], summary="Ver log de auditoría")
 async def list_audit_log(
-    current_user: AdminOnly,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 20,
@@ -30,15 +31,12 @@ async def list_audit_log(
     to_date: Optional[datetime] = Query(None),
 ) -> list[AuditLog]:
     """
-    Lista el log de auditoría de la organización.
-    Filtra por usuario, documento, acción y rango de fechas.
+    Lista el log de auditoría de la empresa activa.
+    Solo incluye entradas de usuarios que pertenecen a esa empresa.
     """
-    # Solo ver auditoría de usuarios de la misma organización
-    from app.models.user import User as UserModel
-
     org_user_ids = (
         db.query(UserModel.id)
-        .filter(UserModel.organization_id == current_user.organization_id)
+        .filter(UserModel.organization_id == organization_id)
         .subquery()
     )
 

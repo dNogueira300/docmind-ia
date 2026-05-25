@@ -10,11 +10,13 @@ from fastapi import (
 )
 
 logger = logging.getLogger("docmind.documents")
-from sqlalchemy import func
+from sqlalchemy import func, or_, desc, case
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_role, get_current_user
+from app.core.deps import (
+    require_role, get_current_user, get_active_organization_id,
+)
 from app.models.user import User
 from app.models.document import Document, DocStatus
 from app.models.audit_log import AuditAction
@@ -64,6 +66,7 @@ def _detect_file_type(header: bytes, ip: str | None = None, filename: str | None
 @router.get("/", response_model=list[DocumentListResponse], summary="Listar documentos")
 async def list_documents(
     current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 20,
@@ -75,7 +78,7 @@ async def list_documents(
 ) -> list[Document]:
     """Lista documentos de la organización con filtros opcionales."""
     q = db.query(Document).filter(
-        Document.organization_id == current_user.organization_id
+        Document.organization_id == organization_id
     )
     if category_id:
         q = q.filter(Document.category_id == category_id)
@@ -101,6 +104,7 @@ async def upload_document(
     request: Request,
     background_tasks: BackgroundTasks,
     current_user: EditorOrAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
 ) -> Document:
@@ -164,14 +168,14 @@ async def upload_document(
         file_data=file_data,
         filename=file.filename or "documento",
         content_type=file.content_type or "application/octet-stream",
-        organization_id=current_user.organization_id,
+        organization_id=organization_id,
         document_id=document_id,
     )
 
     # Crear registro en BD
     doc = Document(
         id=document_id,
-        organization_id=current_user.organization_id,
+        organization_id=organization_id,
         uploaded_by=current_user.id,
         original_filename=file.filename or "documento",
         stored_path=stored_path,
@@ -199,33 +203,83 @@ async def upload_document(
     return doc
 
 
-@router.get("/search", response_model=list[DocumentListResponse], summary="Búsqueda full-text")
+@router.get(
+    "/search",
+    response_model=list[DocumentListResponse],
+    summary="Búsqueda combinada (nombre + contenido + fuzzy)",
+)
 async def search_documents(
     current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
-    q: str = Query(default="", description="Texto a buscar en el contenido de los documentos"),
+    q: str = Query(
+        default="",
+        description=(
+            "Texto a buscar. Coincide por: (1) nombre del archivo, "
+            "(2) contenido OCR via full-text en español, "
+            "(3) similitud fuzzy (pg_trgm) tolerante a errores tipográficos."
+        ),
+    ),
     skip: int = 0,
     limit: int = 20,
 ) -> list[Document]:
     """
-    Búsqueda semántica sobre ocr_text usando PostgreSQL full-text search (índice GIN).
-    Retorna documentos con status 'classified' o 'review' de la organización del usuario.
+    Búsqueda inteligente que combina tres estrategias y las une por OR:
+
+    1. **Nombre del archivo** (ILIKE %q%): si el archivo se llama `1234.pdf`,
+       buscar `1234` lo encuentra.
+    2. **Contenido OCR**: PostgreSQL full-text search en español sobre `ocr_text`
+       (índice GIN existente). Encuentra "contrato" dentro del documento aunque
+       el archivo se llame `1234.pdf`.
+    3. **Fuzzy / tolerante a errores**: similitud trigram (`pg_trgm`) sobre
+       nombre y contenido. Si el usuario escribe `conratro`, encuentra
+       documentos con `contrato`.
+
+    Resultados ordenados por mejor relevancia combinada.
     """
-    if not q.strip():
+    query_str = q.strip()
+    if not query_str:
         return []
 
-    tsquery = func.plainto_tsquery("spanish", q)
-    tsvector = func.to_tsvector("spanish", Document.ocr_text)
+    org_id = organization_id
+    like_pattern = f"%{query_str}%"
+    fuzzy_threshold = 0.2  # similitud mínima para considerar match fuzzy
+
+    tsquery = func.plainto_tsquery("spanish", query_str)
+    tsvector = func.to_tsvector("spanish", func.coalesce(Document.ocr_text, ""))
+
+    # Scores parciales — se suman para ordenar (mayor primero).
+    # Boost: match exacto de substring en el nombre vale 1.0 fijo.
+    name_score = case(
+        (Document.original_filename.ilike(like_pattern), 1.0),
+        else_=func.similarity(Document.original_filename, query_str),
+    )
+    fts_score = func.coalesce(func.ts_rank(tsvector, tsquery), 0.0)
+    fuzzy_content_score = func.coalesce(
+        func.word_similarity(query_str, func.coalesce(Document.ocr_text, "")),
+        0.0,
+    )
+
+    # Condiciones (cualquiera basta)
+    cond_name_like = Document.original_filename.ilike(like_pattern)
+    cond_name_fuzzy = func.similarity(
+        Document.original_filename, query_str
+    ) > fuzzy_threshold
+    cond_fts = tsvector.op("@@")(tsquery)
+    cond_fuzzy_content = func.word_similarity(
+        query_str, func.coalesce(Document.ocr_text, "")
+    ) > fuzzy_threshold
 
     return (
         db.query(Document)
         .filter(
-            Document.organization_id == current_user.organization_id,
-            Document.status.in_([DocStatus.classified, DocStatus.review]),
-            Document.ocr_text.isnot(None),
-            tsvector.op("@@")(tsquery),
+            Document.organization_id == org_id,
+            or_(cond_name_like, cond_name_fuzzy, cond_fts, cond_fuzzy_content),
         )
-        .order_by(func.ts_rank(tsvector, tsquery).desc())
+        .order_by(
+            desc(name_score + fts_score + fuzzy_content_score),
+            Document.created_at.desc(),
+        )
         .offset(skip)
         .limit(limit)
         .all()
@@ -237,6 +291,7 @@ async def get_document(
     document_id: UUID,
     request: Request,
     current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> Document:
     """Retorna el detalle completo de un documento, incluyendo ocr_text."""
@@ -244,7 +299,7 @@ async def get_document(
         db.query(Document)
         .filter(
             Document.id == document_id,
-            Document.organization_id == current_user.organization_id,
+            Document.organization_id == organization_id,
         )
         .first()
     )
@@ -266,27 +321,31 @@ async def get_document(
 
 @router.get(
     "/{document_id}/download-url",
-    summary="Obtener URL de descarga",
+    summary="Obtener URL de descarga del archivo original",
 )
 async def get_download_url(
     document_id: UUID,
     request: Request,
     current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Genera una URL firmada temporal (1 hora) para descargar el archivo."""
+    """Genera una URL firmada temporal (1 hora) para descargar el archivo original."""
     doc = (
         db.query(Document)
         .filter(
             Document.id == document_id,
-            Document.organization_id == current_user.organization_id,
+            Document.organization_id == organization_id,
         )
         .first()
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
-    url = minio_service.get_presigned_url(doc.stored_path)
+    url = minio_service.get_presigned_url(
+        doc.stored_path,
+        response_filename=doc.original_filename,
+    )
 
     # Auditoría
     ip = request.client.host if request.client else None
@@ -295,6 +354,93 @@ async def get_download_url(
         user_id=current_user.id,
         action=AuditAction.download,
         document_id=doc.id,
+        ip_address=ip,
+    )
+
+    return {"download_url": url, "expires_in_seconds": 3600}
+
+
+@router.get(
+    "/{document_id}/preview-url",
+    summary="URL firmada inline para vista previa del archivo original",
+)
+async def get_preview_url(
+    document_id: UUID,
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    URL firmada para mostrar el archivo original embebido (iframe / img tag).
+    No registra auditoría de descarga — solo es para preview en el panel detalle.
+    """
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    url = minio_service.get_presigned_url(doc.stored_path)
+    return {
+        "preview_url": url,
+        "file_type": doc.file_type,
+        "expires_in_seconds": 3600,
+    }
+
+
+@router.get(
+    "/{document_id}/digitalized-url",
+    summary="URL firmada para descargar el .docx digitalizado",
+)
+async def get_digitalized_url(
+    document_id: UUID,
+    request: Request,
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Devuelve la URL firmada del archivo .docx generado tras el OCR.
+    Si la digitalización aún no terminó, responde 404.
+    """
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not doc.digitalized_path:
+        raise HTTPException(
+            status_code=404,
+            detail="El documento aún no ha sido digitalizado.",
+        )
+
+    # Nombre amigable para la descarga
+    base_name = doc.original_filename.rsplit(".", 1)[0] or "documento"
+    download_name = f"{base_name}.docx"
+
+    url = minio_service.get_presigned_url(
+        doc.digitalized_path,
+        response_filename=download_name,
+    )
+
+    # Auditoría: cuenta como descarga
+    ip = request.client.host if request.client else None
+    log_action(
+        db=db,
+        user_id=current_user.id,
+        action=AuditAction.download,
+        document_id=doc.id,
+        detail={"type": "digitalized_docx"},
         ip_address=ip,
     )
 
@@ -311,6 +457,7 @@ async def reclassify_document(
     data: DocumentReclassify,
     request: Request,
     current_user: EditorOrAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> Document:
     """Reclasifica manualmente un documento asignándole una categoría."""
@@ -318,7 +465,7 @@ async def reclassify_document(
         db.query(Document)
         .filter(
             Document.id == document_id,
-            Document.organization_id == current_user.organization_id,
+            Document.organization_id == organization_id,
         )
         .first()
     )
@@ -332,7 +479,7 @@ async def reclassify_document(
         db.query(Category)
         .filter(
             Category.id == data.category_id,
-            Category.organization_id == current_user.organization_id,
+            Category.organization_id == organization_id,
         )
         .first()
     )
@@ -368,6 +515,7 @@ async def delete_document(
     document_id: UUID,
     request: Request,
     current_user: AdminOnly,
+    organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -378,7 +526,7 @@ async def delete_document(
         db.query(Document)
         .filter(
             Document.id == document_id,
-            Document.organization_id == current_user.organization_id,
+            Document.organization_id == organization_id,
         )
         .first()
     )

@@ -16,7 +16,8 @@ function formatDate(iso) {
 }
 
 export default function DashboardPage() {
-  const { isEditor } = useAuth()
+  const { isEditor, tenantSlug } = useAuth()
+  const link = (p) => tenantSlug ? `/${tenantSlug}/${p}` : `/${p}`
   const [docs, setDocs] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -82,7 +83,7 @@ export default function DashboardPage() {
               </p>
             </div>
             <Link
-              to="/upload"
+              to={link('upload')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-md)] text-white text-sm font-medium transition-all duration-150 hover:-translate-y-px hover:shadow-md active:scale-[0.97]"
               style={{ backgroundColor: 'var(--color-primary)' }}
             >
@@ -107,7 +108,7 @@ export default function DashboardPage() {
               Documentos recientes
             </h2>
             <Link
-              to="/documents"
+              to={link('documents')}
               className="flex items-center gap-1 text-xs font-medium transition-all duration-150 hover:gap-1.5"
               style={{ color: 'var(--color-primary)' }}
             >

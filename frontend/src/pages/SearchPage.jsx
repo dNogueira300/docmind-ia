@@ -38,7 +38,7 @@ export default function SearchPage() {
   }
 
   return (
-    <Layout title="Búsqueda semántica">
+    <Layout title="Búsqueda inteligente">
       <div className="max-w-2xl mx-auto flex flex-col gap-6">
         {/* Buscador */}
         <form onSubmit={handleSearch} className="flex gap-3">
@@ -48,7 +48,7 @@ export default function SearchPage() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar en el contenido de los documentos..."
+              placeholder="Nombre, contenido o palabra aproximada (ej. 'conratro' encuentra 'contrato')..."
               className="w-full pl-10 pr-4 py-2.5 text-sm rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)] transition-colors"
               autoFocus
             />
@@ -103,8 +103,9 @@ export default function SearchPage() {
             <p className="text-sm text-[var(--color-text-muted)]">
               Escribe una búsqueda y presiona Enter
             </p>
-            <p className="text-xs text-[var(--color-text-muted)] mt-1">
-              Busca en el texto extraído de los documentos clasificados
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-md">
+              Búsqueda inteligente: por nombre del archivo, por contenido del documento
+              (texto OCR) y tolerante a errores tipográficos (fuzzy search).
             </p>
           </div>
         )}

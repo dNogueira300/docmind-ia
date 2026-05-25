@@ -74,10 +74,32 @@ def _extract_pdf(file_bytes: bytes) -> str:
 
 def _pdf_as_image_ocr(file_bytes: bytes) -> str:
     """
-    Intenta abrir el PDF directamente con Pillow y aplicar Tesseract.
-    Funciona para PDFs de una sola página que Pillow puede leer.
-    Retorna string vacío si no es posible.
+    Convierte cada página del PDF en imagen y aplica Tesseract.
+
+    Estrategia preferida: pdf2image + poppler (soporta PDFs de N páginas).
+    Fallback: Pillow directo (sólo PDFs de 1 página).
     """
+    # ── Preferido: pdf2image (multi-página, escalable) ──────────────────────
+    try:
+        from pdf2image import convert_from_bytes  # noqa: PLC0415
+
+        # dpi=200 es un buen balance entre velocidad y precisión OCR
+        pages = convert_from_bytes(file_bytes, dpi=200)
+        text_parts: list[str] = []
+        for i, page_img in enumerate(pages, start=1):
+            page_text = pytesseract.image_to_string(page_img, lang="spa")
+            text_parts.append(page_text)
+            logger.info(
+                f"OCR pdf2image: página {i}/{len(pages)} → "
+                f"{len(page_text)} caracteres"
+            )
+        joined = "\n\n".join(t.strip() for t in text_parts if t.strip())
+        if joined:
+            return joined
+    except Exception as exc:
+        logger.warning(f"pdf2image no pudo procesar el PDF: {exc}")
+
+    # ── Fallback: Pillow para PDFs de 1 página ──────────────────────────────
     try:
         img = Image.open(io.BytesIO(file_bytes))
         text = pytesseract.image_to_string(img, lang="spa")
