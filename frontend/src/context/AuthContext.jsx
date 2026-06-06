@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login as apiLogin, logout as apiLogout, getMe } from '../services/api/auth'
-import { listOrganizations } from '../services/api/organizations'
 import {
   setToken, clearToken, getToken,
   setActiveTenant, getActiveTenant,
@@ -60,37 +59,21 @@ export function AuthProvider({ children }) {
 
       // Setear tenant activo coherente con el rol
       if (me.is_super_admin) {
-        // Super admin: traer la lista de empresas y entrar a la primera
-        // activa automáticamente. Esto les da acceso completo a TODOS los
-        // módulos (Documentos, Categorías, Usuarios, etc.) sin tener que
-        // pasar primero por /admin/organizations.
-        try {
-          const orgs = await listOrganizations({ include_inactive: false })
-          const firstActive = orgs.find((o) => o.active) || orgs[0]
-          if (firstActive) {
-            setActiveTenant(firstActive.id)
-            setActiveTenantIdState(firstActive.id)
-            setActiveOrganizationState(firstActive)
-            navigate(`/${firstActive.slug}/documents`)
-          } else {
-            // No hay empresas todavía → ir al panel de gestión para crear una
-            setActiveTenant(null)
-            setActiveTenantIdState(null)
-            setActiveOrganizationState(null)
-            navigate('/admin/organizations')
-          }
-        } catch (e) {
-          // Si falla la consulta, caemos al panel de empresas
-          setActiveTenant(null)
-          setActiveTenantIdState(null)
-          setActiveOrganizationState(null)
-          navigate('/admin/organizations')
-        }
+        // Super admin: siempre al panel de gestión de empresas.
+        setActiveTenant(null)
+        setActiveTenantIdState(null)
+        setActiveOrganizationState(null)
+        navigate('/admin/organizations')
       } else {
         setActiveTenant(me.organization_id)
         setActiveTenantIdState(me.organization_id)
         setActiveOrganizationState(me.organization)
-        navigate(`/${me.organization.slug}/documents`)
+        // Redirección por rol: admin → dashboard; editor/consultor → documents
+        if (me.role === 'admin') {
+          navigate(`/${me.organization.slug}/dashboard`)
+        } else {
+          navigate(`/${me.organization.slug}/documents`)
+        }
       }
       return { ok: true, user: me }
     } catch (err) {

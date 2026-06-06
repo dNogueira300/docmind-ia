@@ -1,4 +1,4 @@
-import { Image, MoreVertical, Download, Eye, RefreshCw, Trash2 } from 'lucide-react'
+import { Image, MoreVertical, Download, Eye, RefreshCw, Trash2, RotateCcw, CheckCircle } from 'lucide-react'
 import Badge from '../UI/Badge'
 import ActionMenu from '../UI/ActionMenu'
 import { useAuth } from '../../context/AuthContext'
@@ -37,21 +37,28 @@ function formatSize(kb) {
 }
 
 /**
- * @param {{ doc: object, categories: object[], onView: fn, onDownload: fn, onReclassify: fn, onDelete: fn }} props
+ * @param {{ doc, categories, onView, onDownload, onReclassify, onDelete, onReprocess, onApprove }} props
  */
-export default function DocumentRow({ doc, categories = [], onView, onDownload, onReclassify, onDelete }) {
+export default function DocumentRow({ doc, categories = [], onView, onDownload, onReclassify, onDelete, onReprocess, onApprove }) {
   const { isAdmin, isEditor } = useAuth()
 
   const category = categories.find((c) => c.id === doc.category_id)
   const score    = doc.ai_confidence_score
   const canReclassify = isEditor && doc.status !== 'pending' && doc.status !== 'processing'
+  const canReprocess  = isEditor && (doc.status === 'review' || doc.status === 'error')
+  const canApprove    = isEditor && doc.status === 'pending_approval'
 
-  // Items del menú — ActionMenu se renderiza en portal y maneja auto-flip
   const menuItems = [
     { label: 'Ver detalle',  icon: Eye,       onClick: () => onView?.(doc) },
     { label: 'Descargar',    icon: Download,  onClick: () => onDownload?.(doc) },
+    ...(canApprove
+      ? [{ label: 'Aprobar / Rechazar', icon: CheckCircle, onClick: () => onApprove?.(doc) }]
+      : []),
     ...(canReclassify
       ? [{ label: 'Reclasificar', icon: RefreshCw, onClick: () => onReclassify?.(doc) }]
+      : []),
+    ...(canReprocess
+      ? [{ label: 'Reprocesar', icon: RotateCcw, onClick: () => onReprocess?.(doc) }]
       : []),
     ...(isAdmin
       ? [{ label: 'Eliminar', icon: Trash2, onClick: () => onDelete?.(doc), danger: true }]
@@ -83,12 +90,18 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
             >
               {doc.original_filename}
             </p>
-            <p
-              className="text-xs"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              {formatSize(doc.file_size_kb)}
-            </p>
+            {doc.ai_summary ? (
+              <p
+                className="text-xs truncate max-w-[220px] mt-0.5"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                {doc.ai_summary}
+              </p>
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                {formatSize(doc.file_size_kb)}
+              </p>
+            )}
           </div>
         </div>
       </td>
@@ -119,22 +132,32 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
         )}
       </td>
 
-      {/* Score IA */}
+      {/* Score IA + Riesgo */}
       <td className="px-4 py-3">
-        {score != null ? (
-          <span
-            className="text-xs font-medium tabular-nums"
-            style={{
-              color: score >= 0.70
-                ? 'var(--color-success)'
-                : 'var(--color-warning)',
-            }}
-          >
-            {(score * 100).toFixed(0)}%
-          </span>
-        ) : (
-          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>
-        )}
+        <div className="flex flex-col gap-1">
+          {score != null ? (
+            <span
+              className="text-xs font-medium tabular-nums"
+              style={{
+                color: score >= 0.70 ? 'var(--color-success)' : 'var(--color-warning)',
+              }}
+            >
+              {(score * 100).toFixed(0)}%
+            </span>
+          ) : (
+            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>
+          )}
+          {doc.risk_level && doc.risk_level !== 'low' && (
+            <Badge type="risk" value={doc.risk_level} />
+          )}
+        </div>
+      </td>
+
+      {/* Subido por */}
+      <td className="px-4 py-3">
+        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {doc.uploader_name ?? '—'}
+        </span>
       </td>
 
       {/* Fecha */}
@@ -144,7 +167,7 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
         </span>
       </td>
 
-      {/* Acciones — el portal de ActionMenu se renderiza en document.body */}
+      {/* Acciones */}
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-end">
           <ActionMenu

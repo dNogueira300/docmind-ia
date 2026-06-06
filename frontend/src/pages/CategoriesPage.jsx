@@ -11,7 +11,7 @@ import { getDocuments } from '../services/api/documents'
 import { useToast } from '../context/ToastContext'
 import { Tag } from 'lucide-react'
 
-const EMPTY_FORM = { name: '', color: '#2563D4', description: '' }
+const EMPTY_FORM = { name: '', color: '#2563D4', description: '', requires_approval: false, approver_role: 'admin' }
 
 export default function CategoriesPage() {
   const toast = useToast()
@@ -31,7 +31,7 @@ export default function CategoriesPage() {
   useEffect(() => { load() }, [])
 
   const openCreate = () => { setEditTarget(null); setForm(EMPTY_FORM); setError(''); setModalOpen(true) }
-  const openEdit = (cat) => { setEditTarget(cat); setForm({ name: cat.name, color: cat.color, description: cat.description ?? '' }); setError(''); setModalOpen(true) }
+  const openEdit = (cat) => { setEditTarget(cat); setForm({ name: cat.name, color: cat.color, description: cat.description ?? '', requires_approval: cat.requires_approval ?? false, approver_role: cat.approver_role ?? 'admin' }); setError(''); setModalOpen(true) }
 
   const openDelete = async (cat) => {
     setDeleteTarget(cat)
@@ -117,7 +117,17 @@ export default function CategoriesPage() {
                     style={{ backgroundColor: cat.color }}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[var(--color-text-primary)]">{cat.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-[var(--color-text-primary)]">{cat.name}</p>
+                      {cat.requires_approval && (
+                        <span
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                          style={{ backgroundColor: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}
+                        >
+                          Aprobación
+                        </span>
+                      )}
+                    </div>
                     {cat.description && (
                       <p className="text-xs text-[var(--color-text-muted)] truncate">{cat.description}</p>
                     )}
@@ -185,6 +195,31 @@ export default function CategoriesPage() {
               <span className="text-sm font-mono text-[var(--color-text-secondary)]">{form.color}</span>
             </div>
           </div>
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={form.requires_approval}
+              onChange={(e) => setForm((f) => ({ ...f, requires_approval: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 rounded accent-[var(--color-primary)]"
+            />
+            <div>
+              <p className="text-sm font-medium text-[var(--color-text-primary)]">Requiere aprobación</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Los documentos clasificados en esta categoría deberán ser aprobados manualmente antes de quedar disponibles</p>
+            </div>
+          </label>
+          {form.requires_approval && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">Rol aprobador</label>
+              <select
+                value={form.approver_role}
+                onChange={(e) => setForm((f) => ({ ...f, approver_role: e.target.value }))}
+                className="px-3 py-2 text-sm rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              >
+                <option value="admin">Admin</option>
+                <option value="editor">Editor</option>
+              </select>
+            </div>
+          )}
         </div>
       </Modal>
 

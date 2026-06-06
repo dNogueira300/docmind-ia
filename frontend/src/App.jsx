@@ -12,6 +12,8 @@ import CategoriesPage from './pages/CategoriesPage'
 import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
 import OrganizationsPage from './pages/OrganizationsPage'
+import GlobalAdminsPage from './pages/GlobalAdminsPage'
+import RiskRulesPage from './pages/RiskRulesPage'
 
 /* ───────────── Guards ─────────────────────────────────────────── */
 
@@ -22,18 +24,32 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-function AdminRoute({ children }) {
-  const { isAuthenticated, isAdmin, loading } = useAuth()
+/**
+ * Ruta exclusiva para usuarios de empresa (non-super_admin).
+ * Si un super_admin intenta acceder, lo redirige a /admin/organizations.
+ */
+function TenantRoute({ children }) {
+  const { isAuthenticated, isSuperAdmin, loading } = useAuth()
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (isSuperAdmin) return <Navigate to="/admin/organizations" replace />
+  return children
+}
+
+function TenantAdminRoute({ children }) {
+  const { isAuthenticated, isSuperAdmin, isAdmin, loading } = useAuth()
+  if (loading) return null
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (isSuperAdmin) return <Navigate to="/admin/organizations" replace />
   if (!isAdmin) return <Navigate to="/" replace />
   return children
 }
 
-function EditorRoute({ children }) {
-  const { isAuthenticated, isEditor, loading } = useAuth()
+function TenantEditorRoute({ children }) {
+  const { isAuthenticated, isSuperAdmin, isEditor, loading } = useAuth()
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (isSuperAdmin) return <Navigate to="/admin/organizations" replace />
   if (!isEditor) return <Navigate to="/" replace />
   return children
 }
@@ -47,11 +63,8 @@ function SuperAdminRoute({ children }) {
 }
 
 /**
- * Guard de aislamiento de tenant.
- *
- * Si un usuario regular intenta entrar a `/otra-empresa/...`, lo redirigimos
- * a su propia empresa. Los super_admin pueden entrar a cualquier slug y la URL
- * gana sobre el tenant activo (se sincroniza vía useEffect en TenantSync).
+ * Guard de aislamiento de tenant para usuarios regulares.
+ * Super admins no llegan aquí (bloqueados por TenantRoute antes).
  */
 function TenantGuard({ children }) {
   const { user, isSuperAdmin, switchTenant, activeTenantId } = useAuth()
@@ -59,8 +72,6 @@ function TenantGuard({ children }) {
   const [resolving, setResolving] = useState(false)
   const [resolveError, setResolveError] = useState(false)
 
-  // Super admin: si el slug en URL no coincide con el tenant activo,
-  // resolverlo vía API y actualizar el header X-Active-Tenant.
   useEffect(() => {
     if (!user || !isSuperAdmin || !tenantSlug) return
     let cancelled = false
@@ -68,8 +79,6 @@ function TenantGuard({ children }) {
     getOrganizationBySlug(tenantSlug)
       .then((org) => {
         if (cancelled) return
-        // Pasamos el objeto completo (no solo id) para hidratar el nombre en
-        // el header sin un round-trip extra.
         switchTenant(org)
         setResolveError(false)
       })
@@ -80,7 +89,6 @@ function TenantGuard({ children }) {
 
   if (!user) return null
 
-  // Regulares: redirigir si el slug no es el suyo
   if (!isSuperAdmin) {
     const userSlug = user.organization?.slug
     if (tenantSlug !== userSlug) {
@@ -89,8 +97,6 @@ function TenantGuard({ children }) {
     return children
   }
 
-  // Super admin: bloquear render mientras se resuelve el slug (evita queries
-  // a la API con el tenant equivocado).
   if (resolveError) return <Navigate to="/admin/organizations" replace />
   if (resolving) return null
   return children
@@ -109,8 +115,7 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Login global (super admin entra por aquí; regulares también pueden
-          entrar acá y elegir empresa, o bien ir directo a /:slug/login). */}
+      {/* Login */}
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to={homeForRole()} replace /> : <LoginPage />}
@@ -120,75 +125,55 @@ function AppRoutes() {
         element={isAuthenticated ? <Navigate to={homeForRole()} replace /> : <LoginPage />}
       />
 
-      {/* Root → redirige según rol */}
+      {/* Root */}
       <Route path="/" element={<Navigate to={homeForRole()} replace />} />
 
-      {/* ── Rutas SUPER ADMIN (sin tenant) ──────────────────────── */}
+      {/* ── Rutas SUPER ADMIN (globales, sin tenant) ─────────────────── */}
       <Route
         path="/admin/organizations"
-        element={
-          <SuperAdminRoute>
-            <OrganizationsPage />
-          </SuperAdminRoute>
-        }
+        element={<SuperAdminRoute><OrganizationsPage /></SuperAdminRoute>}
+      />
+      <Route
+        path="/admin/users"
+        element={<SuperAdminRoute><GlobalAdminsPage /></SuperAdminRoute>}
+      />
+      <Route
+        path="/admin/audit"
+        element={<SuperAdminRoute><AuditPage /></SuperAdminRoute>}
       />
 
-      {/* ── Rutas TENANT-SCOPED ─────────────────────────────────── */}
+      {/* ── Rutas TENANT-SCOPED (bloqueadas para super_admin) ────────── */}
       <Route
         path="/:tenantSlug/dashboard"
-        element={
-          <ProtectedRoute>
-            <TenantGuard><DashboardPage /></TenantGuard>
-          </ProtectedRoute>
-        }
+        element={<TenantRoute><TenantGuard><DashboardPage /></TenantGuard></TenantRoute>}
       />
       <Route
         path="/:tenantSlug/documents"
-        element={
-          <ProtectedRoute>
-            <TenantGuard><DocumentsPage /></TenantGuard>
-          </ProtectedRoute>
-        }
+        element={<TenantRoute><TenantGuard><DocumentsPage /></TenantGuard></TenantRoute>}
       />
       <Route
         path="/:tenantSlug/upload"
-        element={
-          <EditorRoute>
-            <TenantGuard><UploadPage /></TenantGuard>
-          </EditorRoute>
-        }
+        element={<TenantEditorRoute><TenantGuard><UploadPage /></TenantGuard></TenantEditorRoute>}
       />
       <Route
         path="/:tenantSlug/search"
-        element={
-          <ProtectedRoute>
-            <TenantGuard><SearchPage /></TenantGuard>
-          </ProtectedRoute>
-        }
+        element={<TenantRoute><TenantGuard><SearchPage /></TenantGuard></TenantRoute>}
       />
       <Route
         path="/:tenantSlug/categories"
-        element={
-          <AdminRoute>
-            <TenantGuard><CategoriesPage /></TenantGuard>
-          </AdminRoute>
-        }
+        element={<TenantAdminRoute><TenantGuard><CategoriesPage /></TenantGuard></TenantAdminRoute>}
       />
       <Route
         path="/:tenantSlug/users"
-        element={
-          <AdminRoute>
-            <TenantGuard><UsersPage /></TenantGuard>
-          </AdminRoute>
-        }
+        element={<TenantAdminRoute><TenantGuard><UsersPage /></TenantGuard></TenantAdminRoute>}
       />
       <Route
         path="/:tenantSlug/audit"
-        element={
-          <AdminRoute>
-            <TenantGuard><AuditPage /></TenantGuard>
-          </AdminRoute>
-        }
+        element={<TenantAdminRoute><TenantGuard><AuditPage /></TenantGuard></TenantAdminRoute>}
+      />
+      <Route
+        path="/:tenantSlug/risk-rules"
+        element={<TenantAdminRoute><TenantGuard><RiskRulesPage /></TenantGuard></TenantAdminRoute>}
       />
 
       <Route path="*" element={<Navigate to="/" replace />} />

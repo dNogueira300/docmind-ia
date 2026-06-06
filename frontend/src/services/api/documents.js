@@ -61,3 +61,24 @@ export async function deleteDocument(id) {
   const { data } = await client.delete(`/api/v1/documents/${id}`)
   return data
 }
+
+/** Relanza el pipeline OCR+NLP sobre un documento en estado review o error. */
+export async function reprocessDocument(id) {
+  const { data } = await client.patch(`/api/v1/documents/${id}/reprocess`)
+  return data
+}
+
+export async function getStatsByCategory() {
+  const { data } = await client.get('/api/v1/documents/stats/by-category')
+  return data
+}
+
+export async function getStatsByUser() {
+  const { data } = await client.get('/api/v1/documents/stats/by-user')
+  return data
+}
+
+export async function getStatsByRisk() {
+  const { data } = await client.get('/api/v1/documents/stats/by-risk')
+  return data
+}

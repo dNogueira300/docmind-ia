@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
+import GlobalChatButton from "../UI/GlobalChatButton";
 
 export default function Layout({ title, children }) {
   const isMobile = () =>
@@ -48,6 +49,9 @@ export default function Layout({ title, children }) {
         <TopBar title={title} onToggleSidebar={toggle} />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+
+      {/* Botón flotante de DocMind IA — disponible en toda la app */}
+      <GlobalChatButton />
     </div>
   );
 }

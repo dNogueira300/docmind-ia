@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   BrainCircuit,
   Building2,
+  ShieldAlert,
 } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../context/AuthContext";
@@ -24,11 +25,14 @@ const NAV_EDITOR = [{ path: "upload", label: "Subir archivo", icon: Upload }];
 const NAV_ADMIN = [
   { path: "categories", label: "Categorías", icon: Tag },
   { path: "users", label: "Usuarios", icon: Users },
+  { path: "risk-rules", label: "Reglas de Riesgo", icon: ShieldAlert },
   { path: "audit", label: "Auditoría", icon: ScrollText },
 ];
-// Links exclusivos super_admin (sin prefijo de tenant)
+// Links exclusivos super_admin (rutas globales /admin/*)
 const NAV_SUPER = [
   { to: "/admin/organizations", label: "Empresas", icon: Building2 },
+  { to: "/admin/users", label: "Administradores", icon: Users },
+  { to: "/admin/audit", label: "Auditoría global", icon: ScrollText },
 ];
 
 function NavItem({ to, label, icon: Icon, open }) {
@@ -171,46 +175,37 @@ export default function Sidebar({ open, mobile = false }) {
           </div>
         )}
 
-        {NAV_ALL.map((item) => (
-          <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
-        ))}
-
-        {isEditor && (
+        {/* Super admin: solo ve sus 3 módulos globales */}
+        {isSuperAdmin ? (
           <>
-            {open || mobile ? (
-              <SectionLabel>Contenido</SectionLabel>
-            ) : (
-              <Divider />
-            )}
-            {NAV_EDITOR.map((item) => (
-              <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
-            ))}
-          </>
-        )}
-
-        {isAdmin && (
-          <>
-            {open || mobile ? (
-              <SectionLabel>Administración</SectionLabel>
-            ) : (
-              <Divider />
-            )}
-            {NAV_ADMIN.map((item) => (
-              <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
-            ))}
-          </>
-        )}
-
-        {isSuperAdmin && (
-          <>
-            {open || mobile ? (
-              <SectionLabel>Super admin</SectionLabel>
-            ) : (
-              <Divider />
-            )}
+            {(open || mobile) ? <SectionLabel>Super admin</SectionLabel> : <Divider />}
             {NAV_SUPER.map((item) => (
               <NavItem key={item.to} {...item} open={open || mobile} />
             ))}
+          </>
+        ) : (
+          <>
+            {NAV_ALL.map((item) => (
+              <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
+            ))}
+
+            {isEditor && (
+              <>
+                {open || mobile ? <SectionLabel>Contenido</SectionLabel> : <Divider />}
+                {NAV_EDITOR.map((item) => (
+                  <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
+                ))}
+              </>
+            )}
+
+            {isAdmin && (
+              <>
+                {open || mobile ? <SectionLabel>Administración</SectionLabel> : <Divider />}
+                {NAV_ADMIN.map((item) => (
+                  <NavItem key={item.path} to={link(item.path)} label={item.label} icon={item.icon} open={open || mobile} />
+                ))}
+              </>
+            )}
           </>
         )}
       </nav>
