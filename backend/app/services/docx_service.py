@@ -1,7 +1,7 @@
 """Servicio de digitalización: convierte texto OCR en un .docx descargable."""
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger("docmind")
 
@@ -33,7 +33,7 @@ def build_docx(ocr_text: str, source_filename: str) -> bytes:
     meta.add_run(source_filename)
     meta_date = doc.add_paragraph()
     meta_date.add_run("Digitalizado el: ").bold = True
-    meta_date.add_run(datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+    meta_date.add_run(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
 
     doc.add_paragraph()  # espacio en blanco
 

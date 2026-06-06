@@ -29,6 +29,10 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str] = mapped_column(String(7), nullable=False, server_default="'#2563D4'")
+    requires_approval: Mapped[bool] = mapped_column(
+        nullable=False, server_default="false"
+    )
+    approver_role: Mapped[str] = mapped_column(String(20), nullable=False, server_default="'admin'")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("NOW()")
     )

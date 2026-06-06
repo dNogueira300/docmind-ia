@@ -5,6 +5,9 @@ from app.models.user import User, UserRole
 from app.models.category import Category
 from app.models.document import Document, DocStatus
 from app.models.audit_log import AuditLog, AuditAction
+from app.models.alert import DocumentAlert, AlertType, AlertStatus
+from app.models.approval import DocumentApproval, ApprovalStatus
+from app.models.risk_rule import RiskRule, RiskLevel
 
 __all__ = [
     "Base",
@@ -16,4 +19,11 @@ __all__ = [
     "DocStatus",
     "AuditLog",
     "AuditAction",
+    "DocumentAlert",
+    "AlertType",
+    "AlertStatus",
+    "DocumentApproval",
+    "ApprovalStatus",
+    "RiskRule",
+    "RiskLevel",
 ]

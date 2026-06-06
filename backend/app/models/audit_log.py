@@ -23,6 +23,12 @@ class AuditAction(str, enum.Enum):
     reclassify = "reclassify"
     delete = "delete"
     login = "login"
+    # Gestión de usuarios (super_admin)
+    user_create = "user_create"
+    user_update = "user_update"
+    user_password = "user_password"
+    user_deactivate = "user_deactivate"
+    user_activate = "user_activate"
 
 
 class AuditLog(Base):

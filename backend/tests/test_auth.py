@@ -7,7 +7,7 @@ def test_login_exitoso(client: TestClient, admin_user):
     """Login con credenciales correctas retorna un JWT."""
     resp = client.post(
         "/api/v1/auth/login",
-        data={"username": admin_user.email, "password": "admin1234"},
+        data={"username": admin_user.email, "password": "admin1234", "org_slug": "demo"},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -19,7 +19,7 @@ def test_login_password_incorrecta(client: TestClient, admin_user):
     """Login con contraseña incorrecta retorna 401."""
     resp = client.post(
         "/api/v1/auth/login",
-        data={"username": admin_user.email, "password": "contraseña_incorrecta"},
+        data={"username": admin_user.email, "password": "contraseña_incorrecta", "org_slug": "demo"},
     )
     assert resp.status_code == 401
 
@@ -28,7 +28,25 @@ def test_login_email_inexistente(client: TestClient):
     """Login con email que no existe retorna 401."""
     resp = client.post(
         "/api/v1/auth/login",
-        data={"username": "noexiste@docmind.com", "password": "cualquiera"},
+        data={"username": "noexiste@docmind.com", "password": "cualquiera", "org_slug": "demo"},
+    )
+    assert resp.status_code == 401
+
+
+def test_login_sin_org_slug_usuario_regular(client: TestClient, admin_user):
+    """Login sin org_slug para usuario regular retorna 400."""
+    resp = client.post(
+        "/api/v1/auth/login",
+        data={"username": admin_user.email, "password": "admin1234"},
+    )
+    assert resp.status_code == 400
+
+
+def test_login_org_slug_inexistente(client: TestClient, admin_user):
+    """Login con org_slug inexistente retorna 401."""
+    resp = client.post(
+        "/api/v1/auth/login",
+        data={"username": admin_user.email, "password": "admin1234", "org_slug": "org-inexistente-xyz"},
     )
     assert resp.status_code == 401
 

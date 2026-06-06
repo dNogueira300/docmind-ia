@@ -1,6 +1,6 @@
 """Tests del pipeline OCR + NLP y endpoints de búsqueda y descarga."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -43,6 +43,8 @@ def classified_document(db: Session, admin_user) -> Document:
     Documento ya procesado (classified) con ocr_text para probar búsqueda full-text.
     Se inserta directamente en BD sin pasar por el pipeline.
     """
+    # Limpiar cualquier transacción fallida de tests anteriores
+    db.rollback()
     # Limpiar si ya existe de una ejecución anterior
     db.query(Document).filter(
         Document.organization_id == ORG_ID,
@@ -62,8 +64,8 @@ def classified_document(db: Session, admin_user) -> Document:
                  "para la prestación de servicios profesionales entre las partes.",
         ai_confidence_score=0.85,
         status=DocStatus.classified,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(doc)
     db.commit()
@@ -80,6 +82,8 @@ def test_pipeline_classified(db: Session, admin_user, test_category: Category):
     """
     from app.services.pipeline_service import process_document
 
+    db.rollback()  # limpiar estado fallido de tests anteriores al módulo
+
     doc = Document(
         id=uuid.uuid4(),
         organization_id=ORG_ID,
@@ -89,17 +93,28 @@ def test_pipeline_classified(db: Session, admin_user, test_category: Category):
         file_type="pdf",
         file_size_kb=5,
         status=DocStatus.pending,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(doc)
     db.commit()
     doc_id = str(doc.id)
 
-    with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
-         patch("app.services.pipeline_service.nlp_service.classify_document") as mock_nlp:
+    # Texto > 100 chars para superar el umbral mínimo de calidad del pipeline
+    _OCR_TEXT = (
+        "Contrato de prestación de servicios profesionales suscrito entre las partes "
+        "contratantes con fecha 01 de junio de 2026 para la provisión de materiales."
+    )
 
-        mock_ocr.return_value = "Contrato de servicios profesionales entre las partes."
+    with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
+         patch("app.services.pipeline_service.nlp_service.classify_document") as mock_nlp, \
+         patch("app.services.pipeline_service.gemini_service.summarize_document", return_value="Resumen de prueba."), \
+         patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"fake-docx"), \
+         patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="path/to.docx"), \
+         patch("app.services.pipeline_service.alert_service.detect_expiry_dates", return_value=[]), \
+         patch("app.services.pipeline_service.risk_service.evaluate_risk", return_value="low"):
+
+        mock_ocr.return_value = _OCR_TEXT
         mock_nlp.return_value = (test_category.name, 0.92)
 
         process_document(doc_id, db)
@@ -117,7 +132,7 @@ def test_pipeline_classified(db: Session, admin_user, test_category: Category):
 
 def test_pipeline_review_bajo_score(db: Session, admin_user, test_category: Category):
     """
-    Verifica que score < 0.70 deja el documento en status='review'.
+    Verifica que score < CONFIDENCE_THRESHOLD deja el documento en status='review'.
     """
     from app.services.pipeline_service import process_document
 
@@ -130,24 +145,35 @@ def test_pipeline_review_bajo_score(db: Session, admin_user, test_category: Cate
         file_type="pdf",
         file_size_kb=5,
         status=DocStatus.pending,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(doc)
     db.commit()
     doc_id = str(doc.id)
 
-    with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
-         patch("app.services.pipeline_service.nlp_service.classify_document") as mock_nlp:
+    # Texto > 100 chars con bajo score para que el pipeline llegue a la etapa NLP
+    _OCR_TEXT_LOW = (
+        "Documento administrativo de contenido poco claro para la clasificación "
+        "automática del sistema de inteligencia artificial según los parámetros."
+    )
 
-        mock_ocr.return_value = "Texto poco claro para clasificar."
-        mock_nlp.return_value = (test_category.name, 0.45)
+    with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
+         patch("app.services.pipeline_service.nlp_service.classify_document") as mock_nlp, \
+         patch("app.services.pipeline_service.gemini_service.summarize_document", return_value="Resumen."), \
+         patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"fake-docx"), \
+         patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="path/to.docx"), \
+         patch("app.services.pipeline_service.alert_service.detect_expiry_dates", return_value=[]), \
+         patch("app.services.pipeline_service.risk_service.evaluate_risk", return_value="medium"):
+
+        mock_ocr.return_value = _OCR_TEXT_LOW
+        mock_nlp.return_value = (test_category.name, 0.25)
 
         process_document(doc_id, db)
 
     db.refresh(doc)
     assert doc.status == DocStatus.review
-    assert doc.ai_confidence_score == pytest.approx(0.45)
+    assert doc.ai_confidence_score == pytest.approx(0.25)
 
     db.delete(doc)
     db.commit()
@@ -168,8 +194,8 @@ def test_pipeline_error_ocr(db: Session, admin_user):
         file_type="pdf",
         file_size_kb=5,
         status=DocStatus.pending,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(doc)
     db.commit()

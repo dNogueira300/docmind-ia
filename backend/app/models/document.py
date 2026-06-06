@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from app.models.category import Category
     from app.models.user import User
     from app.models.audit_log import AuditLog
+    from app.models.alert import DocumentAlert
+    from app.models.approval import DocumentApproval
 
 
 class DocStatus(str, enum.Enum):
@@ -24,6 +26,7 @@ class DocStatus(str, enum.Enum):
     classified = "classified"
     review = "review"
     error = "error"
+    pending_approval = "pending_approval"
 
 
 class Document(Base):
@@ -54,7 +57,9 @@ class Document(Base):
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)
     file_size_kb: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, server_default="'low'")
     status: Mapped[DocStatus] = mapped_column(
         SAEnum(DocStatus, name="doc_status", create_type=False),
         nullable=False,
@@ -74,7 +79,18 @@ class Document(Base):
     uploader: Mapped["User"] = relationship(
         back_populates="documents", foreign_keys=[uploaded_by]
     )
-    audit_entries: Mapped[list["AuditLog"]] = relationship(back_populates="document")
+    # passive_deletes=True: el ORM NO intenta poner document_id=NULL antes
+    # de eliminar; deja que el ON DELETE CASCADE/SET NULL de PostgreSQL actúe.
+    # Sin esto, SQLAlchemy falla en NOT NULL con IntegrityError al borrar docs.
+    audit_entries: Mapped[list["AuditLog"]] = relationship(
+        back_populates="document", passive_deletes=True
+    )
+    alerts: Mapped[list["DocumentAlert"]] = relationship(
+        back_populates="document", passive_deletes=True
+    )
+    approvals: Mapped[list["DocumentApproval"]] = relationship(
+        back_populates="document", passive_deletes=True
+    )
 
     @property
     def has_digitalized(self) -> bool:

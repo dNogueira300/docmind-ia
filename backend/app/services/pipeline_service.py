@@ -1,40 +1,29 @@
-"""Pipeline de procesamiento de documentos: OCR → DOCX → NLP → actualizar BD."""
+"""Pipeline de procesamiento de documentos: OCR → DOCX → NLP → alertas → riesgo."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocStatus
 from app.models.category import Category
 from app.services import ocr_service, nlp_service, docx_service, minio_service
+from app.services import alert_service, risk_service, gemini_service
 
 logger = logging.getLogger("docmind")
 
-# Umbral: si el clasificador supera este score, se marca como `classified`.
-# Por debajo, se asigna la mejor categoría disponible pero queda en `review`
-# para que un editor confirme. Aun así NUNCA se deja sin categoría cuando
-# hay texto OCR + al menos una categoría en la organización.
 CONFIDENCE_THRESHOLD = nlp_service.CONFIDENCE_THRESHOLD
 
 
 def process_document(document_id: str, db: Session) -> None:
     """
-    Ejecuta el pipeline completo para un documento:
+    Pipeline completo para un documento:
       1. pending → processing
-      2. OCR: extrae texto del archivo en MinIO
-      3. Digitalización: genera un .docx editable y lo sube a MinIO
-      4. NLP: clasifica contra las categorías de la organización
-      5. Actualiza status:
-         - texto OCR vacío               → error
-         - sin categorías en la org      → review
-         - score >= CONFIDENCE_THRESHOLD → classified (categoría asignada)
-         - score <  CONFIDENCE_THRESHOLD → classified igualmente con la mejor
-           categoría candidata; el `ai_confidence_score` queda guardado para
-           que el editor pueda revisar si lo desea, pero el documento no se
-           bloquea en `review`.
-
-    Corre en background (FastAPI BackgroundTasks).
-    Nunca propaga excepciones — los errores se loggean y el doc pasa a `error`.
+      2. OCR
+      3. Resumen automático (ai_summary)
+      4. Generación .docx
+      5. NLP clasificación (o pending_approval si la categoría lo requiere)
+      6. Alertas de vencimiento
+      7. Evaluación de riesgo
     """
     try:
         doc = db.query(Document).filter(Document.id == document_id).first()
@@ -42,31 +31,48 @@ def process_document(document_id: str, db: Session) -> None:
             logger.error(f"Pipeline: documento '{document_id}' no encontrado en BD")
             return
 
-        logger.info(
-            f"Pipeline iniciado: doc={document_id} archivo='{doc.stored_path}'"
-        )
+        logger.info(f"Pipeline iniciado: doc={document_id} archivo='{doc.stored_path}'")
 
-        # ── Paso 1: pending → processing ─────────────────────────────────────
+        # ── 1: pending → processing ───────────────────────────────────────────
         doc.status = DocStatus.processing
-        doc.updated_at = datetime.utcnow()
+        doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
 
-        # ── Paso 2: OCR ───────────────────────────────────────────────────────
+        # ── 2: OCR ────────────────────────────────────────────────────────────
         ocr_text = ocr_service.extract_text(doc.stored_path, doc.file_type)
         doc.ocr_text = ocr_text
         db.commit()
 
         if not ocr_text:
-            logger.warning(
-                f"Pipeline: OCR no extrajo texto para doc={document_id}. "
-                "Marcando como 'error'."
-            )
+            logger.warning(f"Pipeline: OCR vacío para doc={document_id} → error")
             doc.status = DocStatus.error
-            doc.updated_at = datetime.utcnow()
+            doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
             return
 
-        # ── Paso 3: Generación del .docx digitalizado ────────────────────────
+        # Umbral de calidad: si el OCR extrajo muy pocos caracteres (< 100)
+        # probablemente la imagen es de baja calidad y el texto es ilegible.
+        # En vez de intentar clasificar basura con el NLP (que puede tardar
+        # minutos en cargar el modelo), ir directo a review para revisión manual.
+        if len(ocr_text) < 100:
+            logger.warning(
+                f"Pipeline: OCR extrajo solo {len(ocr_text)} chars para "
+                f"doc={document_id} (umbral mínimo: 100). "
+                "Calidad insuficiente para clasificación automática → review."
+            )
+            doc.ai_summary = ocr_text[:200] if ocr_text else None
+            doc.status = DocStatus.review
+            doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            return
+
+        # ── 3: Resumen automático con Gemini ─────────────────────────────────
+        doc.ai_summary = gemini_service.summarize_document(
+            ocr_text, doc_name=doc.original_filename
+        )
+        db.commit()
+
+        # ── 4: Generación del .docx ───────────────────────────────────────────
         try:
             docx_bytes = docx_service.build_docx(
                 ocr_text=ocr_text,
@@ -78,17 +84,10 @@ def process_document(document_id: str, db: Session) -> None:
             )
             doc.digitalized_path = digitalized_path
             db.commit()
-            logger.info(
-                f"Pipeline: .docx digitalizado subido a '{digitalized_path}'"
-            )
         except Exception as docx_exc:
-            # La digitalización es importante pero no debe bloquear la clasificación.
-            logger.error(
-                f"Pipeline: error generando .docx para doc={document_id}: {docx_exc}",
-                exc_info=True,
-            )
+            logger.error(f"Pipeline: error generando .docx para doc={document_id}: {docx_exc}", exc_info=True)
 
-        # ── Paso 4: Categorías de la organización ────────────────────────────
+        # ── 5: Categorías y clasificación NLP ─────────────────────────────────
         categories = (
             db.query(Category)
             .filter(Category.organization_id == doc.organization_id)
@@ -98,59 +97,101 @@ def process_document(document_id: str, db: Session) -> None:
 
         if not category_names:
             logger.info(
-                f"Pipeline: sin categorías en la organización — doc={document_id} "
-                "queda en 'review' para asignación manual."
+                f"Pipeline: sin categorías en la org → doc={document_id} en 'review'. "
+                "Motivo: no existen categorías en la organización."
+            )
+            from app.services.audit_service import log_action
+            from app.models.audit_log import AuditAction
+            log_action(
+                db=db,
+                user_id=doc.uploaded_by,
+                action=AuditAction.upload,
+                document_id=doc.id,
+                detail={"pipeline_review_reason": "no_categories_in_org"},
             )
             doc.status = DocStatus.review
-            doc.updated_at = datetime.utcnow()
+            doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
             return
 
-        # ── Paso 5: Clasificación NLP ────────────────────────────────────────
-        predicted_name, score = nlp_service.classify_document(
-            ocr_text, category_names
-        )
-        matched = next(
-            (c for c in categories if c.name == predicted_name), None
-        )
+        predicted_name, score = nlp_service.classify_document(ocr_text, category_names)
+        matched = next((c for c in categories if c.name == predicted_name), None)
 
         if matched is None:
-            # NLP no devolvió una etiqueta reconocida — usar la primera disponible
             matched = categories[0]
             score = 0.0
-            logger.warning(
-                f"Pipeline: etiqueta NLP '{predicted_name}' no coincide con "
-                f"categorías reales. Asignando fallback '{matched.name}'."
-            )
+            logger.warning(f"Pipeline: etiqueta NLP no coincide → fallback '{matched.name}'")
 
         doc.category_id = matched.id
         doc.ai_confidence_score = score
-        # Política: siempre clasificamos. El umbral solo afecta el log de auditoría.
-        doc.status = DocStatus.classified
 
-        doc.updated_at = datetime.utcnow()
+        # Si la categoría requiere aprobación y el score es suficiente,
+        # ir a pending_approval en lugar de classified.
+        if matched.requires_approval and score >= CONFIDENCE_THRESHOLD:
+            doc.status = DocStatus.pending_approval
+            _create_approval_request(db, doc)
+            logger.info(f"Pipeline: categoría '{matched.name}' requiere aprobación → pending_approval")
+        elif score < CONFIDENCE_THRESHOLD:
+            doc.status = DocStatus.review
+            logger.info(f"Pipeline: score bajo ({score:.2f}) → review. Doc={document_id}")
+        else:
+            doc.status = DocStatus.classified
+
+        doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
 
+        # ── 6: Alertas de vencimiento ─────────────────────────────────────────
+        try:
+            alerts = alert_service.detect_expiry_dates(ocr_text)
+            if alerts:
+                alert_service.persist_alerts(db, document_id, doc.organization_id, alerts)
+        except Exception as alert_exc:
+            logger.error(f"Pipeline: error en alertas para doc={document_id}: {alert_exc}", exc_info=True)
+
+        # ── 7: Evaluación de riesgo ───────────────────────────────────────────
+        try:
+            risk = risk_service.evaluate_risk(
+                db=db,
+                organization_id=doc.organization_id,
+                category_id=doc.category_id,
+                ocr_text=ocr_text,
+                file_size_kb=doc.file_size_kb,
+            )
+            doc.risk_level = risk
+            db.commit()
+        except Exception as risk_exc:
+            logger.error(f"Pipeline: error en riesgo para doc={document_id}: {risk_exc}", exc_info=True)
+
         logger.info(
-            f"Pipeline completado: doc={document_id} "
-            f"status={doc.status.value} "
-            f"score={doc.ai_confidence_score} "
-            f"category_id={doc.category_id} "
-            f"category='{matched.name}'"
+            f"Pipeline completado: doc={document_id} status={doc.status.value} "
+            f"score={doc.ai_confidence_score} category='{matched.name}' risk={doc.risk_level}"
         )
 
     except Exception as exc:
-        logger.error(
-            f"Error crítico en pipeline para doc={document_id}: {exc}",
-            exc_info=True,
-        )
+        logger.error(f"Error crítico en pipeline doc={document_id}: {exc}", exc_info=True)
         try:
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
                 doc.status = DocStatus.error
-                doc.updated_at = datetime.utcnow()
+                doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 db.commit()
-        except Exception as inner_exc:
-            logger.error(
-                f"No se pudo actualizar status a 'error': {inner_exc}"
-            )
+        except Exception as inner:
+            logger.error(f"No se pudo marcar error: {inner}")
+
+
+def _create_approval_request(db: Session, doc: Document) -> None:
+    """Crea un registro de aprobación pendiente para el documento."""
+    from app.models.approval import DocumentApproval, ApprovalStatus
+
+    approval = DocumentApproval(
+        document_id=doc.id,
+        organization_id=doc.organization_id,
+        requested_by=doc.uploaded_by,
+        status=ApprovalStatus.pending,
+    )
+    db.add(approval)
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Error creando aprobación para doc={doc.id}: {exc}")

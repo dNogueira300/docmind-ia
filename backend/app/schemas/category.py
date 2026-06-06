@@ -11,6 +11,8 @@ class CategoryCreate(BaseModel):
     name: str
     description: Optional[str] = None
     color: str = "#2563D4"
+    requires_approval: bool = False
+    approver_role: str = "admin"
 
     @field_validator("color")
     @classmethod
@@ -31,6 +33,8 @@ class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
+    requires_approval: Optional[bool] = None
+    approver_role: Optional[str] = None
 
     @field_validator("color")
     @classmethod
@@ -46,6 +50,8 @@ class CategoryResponse(BaseModel):
     name: str
     description: Optional[str]
     color: str
+    requires_approval: bool = False
+    approver_role: str = "admin"
     created_at: datetime
 
     model_config = {"from_attributes": True}

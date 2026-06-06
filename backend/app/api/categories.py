@@ -80,6 +80,8 @@ async def create_category(
         name=data.name,
         description=data.description,
         color=data.color,
+        requires_approval=data.requires_approval,
+        approver_role=data.approver_role,
     )
     db.add(category)
     db.commit()
@@ -112,6 +114,10 @@ async def update_category(
         category.description = data.description
     if data.color is not None:
         category.color = data.color
+    if data.requires_approval is not None:
+        category.requires_approval = data.requires_approval
+    if data.approver_role is not None:
+        category.approver_role = data.approver_role
 
     db.commit()
     db.refresh(category)

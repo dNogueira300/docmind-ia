@@ -108,7 +108,7 @@ def admin_token(client: TestClient, admin_user: User) -> str:
     """Obtiene un token JWT para el admin."""
     resp = client.post(
         "/api/v1/auth/login",
-        data={"username": admin_user.email, "password": "admin1234"},
+        data={"username": admin_user.email, "password": "admin1234", "org_slug": "demo"},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
@@ -119,7 +119,7 @@ def editor_token(client: TestClient, editor_user: User) -> str:
     """Obtiene un token JWT para el editor."""
     resp = client.post(
         "/api/v1/auth/login",
-        data={"username": editor_user.email, "password": "editor1234"},
+        data={"username": editor_user.email, "password": "editor1234", "org_slug": "demo"},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]

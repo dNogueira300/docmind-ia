@@ -1,6 +1,6 @@
 """Endpoints de documentos: subida, listado, detalle, reclasificación, eliminación."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from typing import Annotated, Optional
 
@@ -11,7 +11,7 @@ from fastapi import (
 
 logger = logging.getLogger("docmind.documents")
 from sqlalchemy import func, or_, desc, case
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import (
@@ -75,10 +75,15 @@ async def list_documents(
     file_type: Optional[str] = Query(None),
     from_date: Optional[datetime] = Query(None),
     to_date: Optional[datetime] = Query(None),
-) -> list[Document]:
+    uploaded_by: Optional[UUID] = Query(None),
+) -> list[dict]:
     """Lista documentos de la organización con filtros opcionales."""
-    q = db.query(Document).filter(
-        Document.organization_id == organization_id
+    from app.models.user import User as UserModel  # noqa: PLC0415
+
+    q = (
+        db.query(Document)
+        .options(joinedload(Document.uploader))
+        .filter(Document.organization_id == organization_id)
     )
     if category_id:
         q = q.filter(Document.category_id == category_id)
@@ -90,8 +95,33 @@ async def list_documents(
         q = q.filter(Document.created_at >= from_date)
     if to_date:
         q = q.filter(Document.created_at <= to_date)
+    if uploaded_by:
+        q = q.filter(Document.uploaded_by == uploaded_by)
 
-    return q.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+    docs = q.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+
+    # Serializar manualmente para incluir uploader_name
+    result = []
+    for d in docs:
+        item = {
+            "id": d.id,
+            "organization_id": d.organization_id,
+            "category_id": d.category_id,
+            "uploaded_by": d.uploaded_by,
+            "uploader_name": d.uploader.name if d.uploader else None,
+            "original_filename": d.original_filename,
+            "file_type": d.file_type,
+            "file_size_kb": d.file_size_kb,
+            "ai_summary": d.ai_summary,
+            "ai_confidence_score": d.ai_confidence_score,
+            "risk_level": d.risk_level,
+            "status": d.status,
+            "has_digitalized": bool(d.digitalized_path),
+            "created_at": d.created_at,
+            "updated_at": d.updated_at,
+        }
+        result.append(item)
+    return result
 
 
 @router.post(
@@ -489,7 +519,7 @@ async def reclassify_document(
     old_category_id = str(doc.category_id) if doc.category_id else None
     doc.category_id = data.category_id
     doc.status = DocStatus.classified
-    doc.updated_at = datetime.utcnow()
+    doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(doc)
 
@@ -508,6 +538,129 @@ async def reclassify_document(
     )
 
     return doc
+
+
+@router.patch(
+    "/{document_id}/reprocess",
+    response_model=DocumentResponse,
+    summary="Reprocesar documento (relanzar pipeline OCR + NLP)",
+)
+async def reprocess_document(
+    document_id: UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    current_user: EditorOrAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> Document:
+    """
+    Relanza el pipeline OCR + NLP sobre un documento en estado 'review' o 'error'.
+    Responde inmediatamente con el documento en estado 'pending'.
+    """
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    if doc.status not in (DocStatus.review, DocStatus.error):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden reprocesar documentos en estado 'review' o 'error'",
+        )
+
+    doc.status = DocStatus.pending
+    doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    db.refresh(doc)
+
+    background_tasks.add_task(process_document, str(doc.id), db)
+    return doc
+
+
+@router.get(
+    "/stats/by-category",
+    summary="Conteo de documentos por categoría",
+)
+async def stats_by_category(
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from app.models.category import Category
+
+    rows = (
+        db.query(
+            Category.id.label("category_id"),
+            Category.name.label("category_name"),
+            Category.color.label("color"),
+            func.count(Document.id).label("count"),
+        )
+        .outerjoin(Document, (Document.category_id == Category.id) & (Document.organization_id == organization_id))
+        .filter(Category.organization_id == organization_id)
+        .group_by(Category.id, Category.name, Category.color)
+        .order_by(desc(func.count(Document.id)))
+        .all()
+    )
+    return [
+        {"category_id": str(r.category_id), "category_name": r.category_name, "color": r.color, "count": r.count}
+        for r in rows
+    ]
+
+
+@router.get(
+    "/stats/by-user",
+    summary="Conteo de documentos por usuario",
+)
+async def stats_by_user(
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from app.models.user import User as UserModel
+
+    rows = (
+        db.query(
+            UserModel.id.label("user_id"),
+            UserModel.name.label("user_name"),
+            func.count(Document.id).label("count"),
+        )
+        .outerjoin(Document, (Document.uploaded_by == UserModel.id) & (Document.organization_id == organization_id))
+        .filter(UserModel.organization_id == organization_id)
+        .group_by(UserModel.id, UserModel.name)
+        .order_by(desc(func.count(Document.id)))
+        .all()
+    )
+    return [
+        {"user_id": str(r.user_id), "user_name": r.user_name, "count": r.count}
+        for r in rows
+    ]
+
+
+@router.get(
+    "/stats/by-risk",
+    summary="Conteo de documentos por nivel de riesgo",
+)
+async def stats_by_risk(
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = (
+        db.query(
+            Document.risk_level.label("risk_level"),
+            func.count(Document.id).label("count"),
+        )
+        .filter(Document.organization_id == organization_id)
+        .group_by(Document.risk_level)
+        .all()
+    )
+    return [{"risk_level": r.risk_level or "low", "count": r.count} for r in rows]
 
 
 @router.delete("/{document_id}", summary="Eliminar documento")

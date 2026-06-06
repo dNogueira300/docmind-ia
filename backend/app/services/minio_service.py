@@ -39,9 +39,9 @@ def upload_file(
 
     Ruta: {organization_id}/{year}/{month}/{document_id}_{filename}
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     stored_path = (
         f"{organization_id}/{now.year}/{now.month:02d}/{document_id}_{filename}"
     )

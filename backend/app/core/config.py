@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     super_admin_email: str = "superadmin@docmind.local"
     super_admin_password: Optional[str] = None  # REQUERIDO en producción
 
+    # Google Gemini API
+    gemini_api_key: Optional[str] = None
+
     @property
     def db_url(self) -> str:
         """Usa URL local solo cuando NO estamos en Docker."""

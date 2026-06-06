@@ -18,6 +18,13 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.docker.txt .
 RUN pip install --no-cache-dir --timeout=300 -r requirements.docker.txt
 
+# Descargar modelo spaCy español para NER de alertas
+# es_core_news_lg (~560 MB): NER con dependencias + vectores
+RUN python -m spacy download es_core_news_lg
+
+# El resumen ahora usa Google Gemini API (google-genai, ya instalado vía requirements).
+# No se necesita modelo local de ~850 MB — la imagen es ~850 MB más liviana.
+
 # Copiar código fuente
 COPY . .
 
