@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
 
 # Instalar dependencias Python
 COPY requirements.docker.txt .
+# torch se instala aparte desde el índice CPU-only de PyTorch para evitar
+# descargar la wheel con CUDA empaquetado (varios GB) — Railway no tiene GPU.
+RUN pip install --no-cache-dir torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir --timeout=300 -r requirements.docker.txt
 
 # Descargar modelo spaCy español para NER de alertas
@@ -31,5 +34,6 @@ COPY . .
 # Exponer puerto
 EXPOSE 8000
 
-# Comando de arranque (modo desarrollo con hot-reload)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Comando de arranque — forma shell para que ${PORT} se expanda en runtime.
+# Railway inyecta PORT dinámicamente; en local cae a 8000.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

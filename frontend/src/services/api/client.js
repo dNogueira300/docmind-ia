@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = "";
+const BASE_URL = import.meta.env.VITE_API_URL || "";
 const TOKEN_KEY = "docmind-token";
 const TENANT_KEY = "docmind-active-tenant";
 

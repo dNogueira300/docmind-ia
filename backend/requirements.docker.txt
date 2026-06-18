@@ -26,7 +26,9 @@ python-docx==1.1.2
 
 # IA / NLP
 transformers==4.52.0
-torch==2.10.0
+# torch se instala por separado en el Dockerfile usando el índice CPU-only
+# (https://download.pytorch.org/whl/cpu) para no traer la build CUDA.
+# torch==2.10.0  ← NO descomentar aquí: reinstalaría la wheel con CUDA.
 
 # NER para extracción de sujetos en alertas de vencimiento
 spacy>=3.7.0,<4.0.0

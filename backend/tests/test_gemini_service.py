@@ -91,10 +91,27 @@ def test_summarize_gemini_falla_usa_heuristica():
     assert len(result) > 0
 
 
-def test_summarize_respeta_limite_600_chars():
-    """El resumen nunca supera 600 caracteres."""
+def test_fallback_respeta_limite_600_chars():
+    """El límite de 600 chars aplica SOLO a la heurística (sin Gemini disponible)."""
+    # Texto largo sin API key → fuerza la ruta heurística.
+    texto_largo = (
+        "El objeto del presente contrato es la prestación integral de servicios. " * 50
+    )
+    with patch.object(gemini_svc.settings, "gemini_api_key", None):
+        result = gemini_svc.summarize_document(texto_largo, "contrato.pdf")
+
+    assert len(result) <= 600
+
+
+def test_summarize_gemini_se_valida_por_contenido_no_longitud():
+    """La ruta de Gemini se valida por contenido: devuelve el resumen tal cual,
+    sin recortarlo a 600 chars (el cap es contrato del fallback, no de Gemini)."""
+    resumen_gemini = (
+        "Contrato de prestación de servicios entre la UNAP y TechSoft S.A.C. por "
+        "S/ 45,000.00 con vigencia de 6 meses. " * 10  # > 600 chars, con contenido real
+    )
     mock_response = MagicMock()
-    mock_response.text = "X" * 800
+    mock_response.text = resumen_gemini
 
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -103,7 +120,10 @@ def test_summarize_respeta_limite_600_chars():
          patch("app.services.gemini_service._get_client", return_value=mock_client):
         result = gemini_svc.summarize_document("b" * 300)
 
-    assert len(result) <= 600
+    # Validación por contenido (no por longitud): se respeta el texto de Gemini.
+    assert result == resumen_gemini.strip()
+    assert "TechSoft" in result
+    assert len(result) > 600  # la ruta de Gemini NO está limitada a 600
 
 
 # ── _fallback_summary ─────────────────────────────────────────────────────────

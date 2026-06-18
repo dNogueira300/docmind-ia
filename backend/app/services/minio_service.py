@@ -10,12 +10,26 @@ from app.core.config import settings
 
 
 def _get_client() -> Minio:
-    """Crea y retorna un cliente MinIO configurado."""
+    """Crea y retorna un cliente MinIO configurado (operaciones internas)."""
     return Minio(
         endpoint=settings.minio_host,
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=settings.minio_secure,
+    )
+
+
+def _get_public_client() -> Minio:
+    """Cliente usado solo para firmar URLs accesibles desde el browser.
+
+    Usa `minio_public_endpoint` (hostname resoluble por el navegador) en vez del
+    endpoint interno, que en Railway solo existe en la red privada.
+    """
+    return Minio(
+        endpoint=settings.minio_public_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        secure=settings.minio_public_secure,
     )
 
 
@@ -93,7 +107,7 @@ def get_presigned_url(
     Si `response_filename` se pasa, fuerza un nombre amigable al descargar
     (Content-Disposition: attachment; filename=...).
     """
-    client = _get_client()
+    client = _get_public_client()
     response_headers: dict | None = None
     if response_filename:
         response_headers = {

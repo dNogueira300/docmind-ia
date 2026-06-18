@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     minio_secret_key: str
     minio_bucket: str = "docmind-docs"
     minio_secure: bool = False
+    # TLS para el endpoint público usado al firmar URLs accesibles desde el browser.
+    # En Railway el bucket suele exponerse vía HTTPS → poner True; en local, False.
+    minio_public_secure: bool = False
 
     # CORS
     allowed_origins: list[str] = ["*"]
