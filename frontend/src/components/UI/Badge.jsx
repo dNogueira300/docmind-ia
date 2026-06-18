@@ -36,13 +36,6 @@ const STATUS_STYLES = {
     dotBg: 'var(--color-error)',
     pulse: false,
   },
-  pending_approval: {
-    label: 'Aprobación',
-    bg:    'rgba(245,197,58,0.15)',
-    color: 'var(--color-warning)',
-    dotBg: 'var(--color-warning)',
-    pulse: true,
-  },
 }
 
 const RISK_STYLES = {

@@ -44,21 +44,48 @@ KEYWORD_RULES: list[tuple[str, list[str]]] = [
     ("contrato", [
         "contrato", "clausula", "clausulas", "convenio", "contratante",
         "contratista", "las partes", "el contratante", "el contratado",
+        "suscrito entre", "prestacion de servicios profesionales",
+    ]),
+    # Órdenes de Servicio / Trabajo / Compra
+    ("orden", [
+        "orden",
+        "orden de servicio", "orden de trabajo", "orden de compra",
+        "orden n°", "orden no.", "se ordena a", "emision de la orden",
+        "ejecutar el servicio",
     ]),
     ("factura", [
-        "factura", "ruc", "boleta", "subtotal", "igv", "monto total",
-        "valor venta", "comprobante de pago",
+        "factura", "ruc", "boleta de venta", "igv",
+        "comprobante de pago", "serie y numero", "tipo de comprobante",
+    ]),
+    # Propuestas Comerciales / Cotizaciones
+    ("propuesta", [
+        "propuesta",
+        "propuesta comercial", "propuesta tecnica", "propuesta economica",
+        "cotizacion", "cotización", "oferta comercial", "oferta tecnica",
+        "presentamos a su consideracion", "propuesta de servicios",
+        "valor de la propuesta",
+    ]),
+    # Reportes de Avance / Proyecto
+    ("reporte", [
+        "reporte",
+        "reporte de avance", "informe de avance", "avance del proyecto",
+        "estado del proyecto", "actividades realizadas en el periodo",
+        "primer trimestre", "segundo trimestre", "tercer trimestre",
+        "hito completado", "progreso del proyecto", "sprint", "entregable",
     ]),
     ("resolucion", [
-        "resolucion", "se resuelve", "considerando que", "resuelve:",
-        "resolución directoral", "resolución rectoral", "resolucion ministerial",
+        "resolucion",
+        "se resuelve", "considerando que", "resuelve:",
+        "resolucion directoral", "resolucion rectoral", "resolucion ministerial",
     ]),
     ("informe", [
+        "informe",
         "informe n", "informe tecnico", "informe final", "se informa",
-        "el presente informe", "asunto:", "antecedentes:",
+        "el presente informe", "antecedentes:", "conclusion:",
     ]),
     ("memorandum", [
-        "memorandum", "memorando", "memo n", "para:", "de:", "asunto:",
+        "memorandum", "memorando", "memo n",
+        "referencia:", "mediante el presente",
     ]),
     ("carta", [
         "estimado", "estimada", "atentamente", "cordialmente",

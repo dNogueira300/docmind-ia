@@ -85,17 +85,11 @@ export default function AlertCard({ alert, onDismissed, compact = false }) {
           </div>
         )}
 
-        {/* Línea 3: título limpio generado por el backend */}
+        {/* Línea 3: descripción generada por IA */}
         {alert.detail && (
           <p
             className="text-xs font-medium"
-            style={{
-              color: isUrgent ? accentColor : 'var(--color-text-secondary)',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
+            style={{ color: isUrgent ? accentColor : 'var(--color-text-secondary)' }}
           >
             {alert.detail}
           </p>

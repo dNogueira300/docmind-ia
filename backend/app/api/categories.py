@@ -2,7 +2,7 @@
 from uuid import UUID
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -13,7 +13,9 @@ from app.core.deps import (
 from app.models.user import User
 from app.models.category import Category
 from app.models.document import Document
+from app.models.audit_log import AuditAction
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
+from app.services.audit_service import log_action
 
 router = APIRouter(prefix="/categories", tags=["Categorías"])
 
@@ -45,6 +47,7 @@ async def list_categories(
 )
 async def create_category(
     data: CategoryCreate,
+    request: Request,
     current_user: CompanyAdmin,
     organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
@@ -86,6 +89,14 @@ async def create_category(
     db.add(category)
     db.commit()
     db.refresh(category)
+
+    log_action(
+        db=db,
+        user_id=current_user.id,
+        action=AuditAction.category_create,
+        detail={"category_id": str(category.id), "name": category.name},
+        ip_address=request.client.host if request.client else None,
+    )
     return category
 
 
@@ -93,6 +104,7 @@ async def create_category(
 async def update_category(
     category_id: UUID,
     data: CategoryUpdate,
+    request: Request,
     current_user: CompanyAdmin,
     organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
@@ -121,12 +133,21 @@ async def update_category(
 
     db.commit()
     db.refresh(category)
+
+    log_action(
+        db=db,
+        user_id=current_user.id,
+        action=AuditAction.category_update,
+        detail={"category_id": str(category_id), "name": category.name},
+        ip_address=request.client.host if request.client else None,
+    )
     return category
 
 
 @router.delete("/{category_id}", summary="Eliminar categoría")
 async def delete_category(
     category_id: UUID,
+    request: Request,
     current_user: CompanyAdmin,
     organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
@@ -146,10 +167,19 @@ async def delete_category(
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
 
+    category_name = category.name
     db.query(Document).filter(Document.category_id == category_id).update(
         {"category_id": None}
     )
 
     db.delete(category)
     db.commit()
-    return {"detail": f"Categoría '{category.name}' eliminada. Documentos movidos a 'Sin categoría'."}
+
+    log_action(
+        db=db,
+        user_id=current_user.id,
+        action=AuditAction.category_delete,
+        detail={"category_id": str(category_id), "name": category_name},
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"detail": f"Categoría '{category_name}' eliminada. Documentos movidos a 'Sin categoría'."}

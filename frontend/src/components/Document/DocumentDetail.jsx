@@ -1,6 +1,6 @@
 import {
   X, Download, RefreshCw, Brain, FileText, Image as ImageIcon,
-  CheckCircle2, XCircle, Bell, BrainCircuit, Sliders,
+  Bell, BrainCircuit, Sliders,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import Badge from '../UI/Badge'
@@ -12,7 +12,6 @@ import {
   getDownloadUrl, reclassifyDocument,
   getPreviewUrl, getDigitalizedUrl, getDocument,
 } from '../../services/api/documents'
-import { approveDocument, rejectDocument } from '../../services/api/approvals'
 import { getAlerts } from '../../services/api/alerts'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
@@ -100,14 +99,11 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
   const [docAlerts,      setDocAlerts]      = useState([])
 
   // Acciones
-  const [downloading,        setDownloading]        = useState(false)
-  const [downloadingDocx,    setDownloadingDocx]    = useState(false)
-  const [reclassifyMode,     setReclassifyMode]     = useState(false)
-  const [selectedCat,        setSelectedCat]        = useState(initialDoc.category_id ?? '')
-  const [reclassifying,      setReclassifying]      = useState(false)
-  const [approvalAction,     setApprovalAction]     = useState(null)
-  const [approvalComment,    setApprovalComment]    = useState('')
-  const [processingApproval, setProcessingApproval] = useState(false)
+  const [downloading,     setDownloading]     = useState(false)
+  const [downloadingDocx, setDownloadingDocx] = useState(false)
+  const [reclassifyMode,  setReclassifyMode]  = useState(false)
+  const [selectedCat,     setSelectedCat]     = useState(initialDoc.category_id ?? '')
+  const [reclassifying,   setReclassifying]   = useState(false)
 
   const category      = categories.find((c) => c.id === doc.category_id)
   const hasDigitalized = doc.has_digitalized || !!doc.digitalized_path
@@ -167,23 +163,6 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
     } catch (err) {
       toast.error('No disponible', err.response?.data?.detail ?? 'El documento aún no ha sido digitalizado.')
     } finally { setDownloadingDocx(false) }
-  }
-
-  const handleApprovalSubmit = async () => {
-    if (!approvalAction) return
-    setProcessingApproval(true)
-    try {
-      if (approvalAction === 'approve') {
-        await approveDocument(doc.id, approvalComment || null)
-        toast.success('Documento aprobado', 'El estado pasó a Clasificado')
-      } else {
-        await rejectDocument(doc.id, approvalComment || null)
-        toast.success('Documento rechazado', 'El estado pasó a Revisión')
-      }
-      onUpdated?.(); setApprovalAction(null); setApprovalComment('')
-    } catch (err) {
-      toast.error('Error', err.response?.data?.detail ?? 'No se pudo procesar la acción')
-    } finally { setProcessingApproval(false) }
   }
 
   const handleReclassify = async () => {
@@ -451,55 +430,8 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
                     )}
                   </div>
 
-                  {/* Aprobación */}
-                  {isEditor && doc.status === 'pending_approval' && (
-                    <div
-                      className="rounded-[var(--radius-md)] p-3 flex flex-col gap-3 border"
-                      style={{ borderColor: 'var(--color-warning)', backgroundColor: 'var(--color-warning-bg)' }}
-                    >
-                      <p className="text-xs font-semibold" style={{ color: 'var(--color-warning)' }}>
-                        Pendiente de aprobación
-                      </p>
-                      {!approvalAction ? (
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => setApprovalAction('approve')}>
-                            <CheckCircle2 size={13} /> Aprobar
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setApprovalAction('reject')}>
-                            <XCircle size={13} /> Rechazar
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                            {approvalAction === 'approve' ? 'Confirmar aprobación' : 'Confirmar rechazo'} — comentario opcional
-                          </p>
-                          <textarea
-                            value={approvalComment}
-                            onChange={(e) => setApprovalComment(e.target.value)}
-                            placeholder="Comentario..."
-                            rows={2}
-                            className="w-full px-3 py-2 text-xs rounded-[var(--radius-md)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                            style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)' }}
-                          />
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => { setApprovalAction(null); setApprovalComment('') }}>Cancelar</Button>
-                            <Button
-                              size="sm"
-                              variant={approvalAction === 'approve' ? 'primary' : 'danger'}
-                              loading={processingApproval}
-                              onClick={handleApprovalSubmit}
-                            >
-                              {approvalAction === 'approve' ? 'Aprobar' : 'Rechazar'}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {/* Reclasificar */}
-                  {isEditor && !stillProcessing && doc.status !== 'pending_approval' && (
+                  {isEditor && !stillProcessing && (
                     <div className="flex flex-col gap-2">
                       <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                         Clasificación

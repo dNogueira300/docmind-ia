@@ -22,18 +22,20 @@ MODEL = "gemini-2.5-flash"
 
 _SUMMARY_PROMPT = """\
 Eres un asistente especializado en documentos administrativos y legales peruanos.
-Lee el siguiente documento y genera un resumen conciso de 2 a 4 oraciones que incluya, \
-cuando la información esté disponible en el texto:
+El archivo se llama "{doc_name}". Lee su contenido y genera un resumen en español \
+que incluya, cuando la información esté disponible en el texto:
 
-- Tipo de documento (contrato, carta, resolución, informe, memorándum, etc.)
-- Partes involucradas (instituciones o personas)
+- Tipo de documento (contrato, carta, resolución, informe, memorándum, orden de servicio, propuesta, reporte, etc.)
+- Partes involucradas (instituciones, empresas o personas)
 - Fecha de emisión o suscripción
-- Objeto o propósito principal
-- Monto económico (si aplica)
-- Fechas clave de vigencia, entrega o vencimiento (si aplica)
+- Objeto o propósito principal del documento
+- Monto económico y condiciones de pago (si aplica)
+- Fechas clave de vigencia, entrega, vencimiento o hitos (si aplica)
+- Obligaciones principales o compromisos asumidos (si aplica)
 
 Responde ÚNICAMENTE con el resumen. Sin títulos, sin introducciones, sin listas. \
-Usa español formal y redacción continua.
+Usa español formal y redacción continua. El resumen debe ser completo pero conciso: \
+máximo 220 palabras. Prioriza los datos más relevantes si el documento es extenso.
 
 DOCUMENTO:
 {text}
@@ -54,9 +56,25 @@ Tienes acceso a las estadísticas actuales del sistema de la organización del u
 DATOS DEL SISTEMA (actualizados al momento de la consulta):
 {context_json}
 
-Puedes responder preguntas sobre documentos, usuarios, categorías, alertas y cualquier \
-dato del sistema. Si no tienes el dato exacto, indícalo y sugiere cómo encontrarlo.
-Responde en español, de forma concisa y directa.
+Los datos incluyen:
+- Totales y estados de documentos
+- Distribución por categoría y por usuario
+- Últimos 5 documentos subidos
+- Alertas de vencimiento pendientes con nombre del documento, tipo y fechas exactas
+- Documentos en estado 'review' o 'error' que necesitan atención
+- Lista completa de usuarios con nombre, rol y estado activo
+- Almacenamiento total usado (KB y MB)
+- Reglas de riesgo configuradas (nombre, nivel, descripción, palabras clave, tamaño mínimo)
+- Lista de documentos con riesgo medio, alto o crítico (nombre, nivel, categoría)
+
+Instrucciones:
+- Si preguntan por qué un documento tiene determinado nivel de riesgo, cruza el nombre \
+  del documento con las reglas de riesgo disponibles y explícalo con detalle.
+- Si preguntan qué documentos están por vencer, usa "alertas_pendientes_detalle" con fechas exactas.
+- Si preguntan qué documentos necesitan atención, usa "documentos_que_necesitan_atencion".
+- Si preguntan por usuarios, roles o quién puede hacer qué, usa "usuarios".
+- Si preguntan por almacenamiento, usa "almacenamiento_total_mb".
+Responde en español, de forma concisa y directa. Si no tienes el dato exacto, indícalo.
 """
 
 
@@ -96,14 +114,14 @@ def summarize_document(text: str, doc_name: str = "") -> str:
         client = _get_client()
         # Limitar a 8000 chars (~2000 tokens) — suficiente para documentos de 10 páginas
         truncated = text[:8000]
-        prompt = _SUMMARY_PROMPT.format(text=truncated)
+        prompt = _SUMMARY_PROMPT.format(text=truncated, doc_name=doc_name or "desconocido")
 
         response = client.models.generate_content(model=MODEL, contents=prompt)
         summary = response.text.strip()
 
         if summary:
             logger.info(f"Resumen Gemini ({len(summary)} chars): {summary[:100]}…")
-            return summary[:600]
+            return summary
 
     except Exception as exc:
         logger.warning(f"Error en Gemini summarize: {exc}. Usando heurística.")
@@ -242,6 +260,42 @@ def extract_text_from_image(image_bytes: bytes, mime_type: str = "image/png") ->
     except Exception as exc:
         logger.warning(f"Error en Gemini Vision OCR: {exc}")
         return ""
+
+
+def generate_alert_description(sentence: str, alert_type: str) -> str:
+    """
+    Genera una descripción clara para una alerta de vencimiento usando Gemini.
+
+    Args:
+        sentence:   Fragmento de texto OCR que contiene el patrón de vencimiento.
+        alert_type: 'expiry', 'deadline' o 'renewal'.
+
+    Returns:
+        Una oración descriptiva, o cadena vacía si Gemini no está disponible.
+    """
+    _TYPE_LABELS = {"expiry": "Vencimiento", "deadline": "Plazo límite", "renewal": "Renovación"}
+    label = _TYPE_LABELS.get(alert_type, "Alerta")
+
+    if not _is_available() or not sentence or not sentence.strip():
+        return ""
+
+    try:
+        client = _get_client()
+        prompt = (
+            f"Eres un asistente de gestión documental. "
+            f"El siguiente fragmento de texto fue detectado como una alerta de tipo '{label}'.\n\n"
+            f"FRAGMENTO: {sentence[:400]}\n\n"
+            f"Genera UNA sola oración en español que explique claramente qué es lo que vence o tiene plazo, "
+            f"cuándo y por qué es importante. Sin comillas, sin títulos, sin punto final."
+        )
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        desc = (response.text or "").strip().rstrip(".")
+        if desc:
+            logger.info(f"Gemini alerta '{alert_type}': {desc[:80]}")
+            return desc
+    except Exception as exc:
+        logger.warning(f"Error generando descripción de alerta con Gemini: {exc}")
+    return ""
 
 
 # ── Fallback heurístico ───────────────────────────────────────────────────────

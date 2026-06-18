@@ -28,15 +28,16 @@ export default function Modal({ open, onClose, title, children, footer, size = '
       {/* Panel */}
       <div
         className={clsx(
-          'relative w-full bg-[var(--color-bg-surface)] rounded-[var(--radius-xl)]',
+          'relative w-full flex flex-col bg-[var(--color-bg-surface)] rounded-[var(--radius-xl)]',
           'border border-[var(--color-border)] shadow-lg',
+          'max-h-[calc(100vh-2rem)]',
           sizes[size]
         )}
         role="dialog"
         aria-modal="true"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+        {/* Header — siempre visible */}
+        <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
           <h2 className="text-sm font-medium text-[var(--color-text-primary)]">{title}</h2>
           <button
             onClick={onClose}
@@ -45,11 +46,11 @@ export default function Modal({ open, onClose, title, children, footer, size = '
             <X size={16} />
           </button>
         </div>
-        {/* Body */}
-        <div className="px-5 py-4">{children}</div>
-        {/* Footer */}
+        {/* Body — scrollable cuando el contenido excede la pantalla */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {/* Footer — siempre visible */}
         {footer && (
-          <div className="flex justify-end gap-2 px-5 py-4 border-t border-[var(--color-border)]">
+          <div className="flex-shrink-0 flex justify-end gap-2 px-5 py-4 border-t border-[var(--color-border)]">
             {footer}
           </div>
         )}

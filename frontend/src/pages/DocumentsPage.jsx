@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, Upload, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import Layout from '../components/Layout/Layout'
 import DocumentRow from '../components/Document/DocumentRow'
@@ -25,9 +26,12 @@ import { useToast } from '../context/ToastContext'
 const LIMIT = 20
 const POLL_INTERVAL = 3000
 
+const RISK_LABELS = { critical: 'Crítico', high: 'Alto', medium: 'Medio', low: 'Bajo' }
+
 export default function DocumentsPage() {
   const { isAdmin, isEditor } = useAuth()
   const toast = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [docs, setDocs] = useState([])
   const [categories, setCategories] = useState([])
   const [categoryStats, setCategoryStats] = useState([])
@@ -38,6 +42,7 @@ export default function DocumentsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCat, setFilterCat] = useState('')
   const [filterUser, setFilterUser] = useState('')
+  const [filterRisk, setFilterRisk] = useState(() => searchParams.get('risk') ?? '')
   const [selectedDoc, setSelectedDoc] = useState(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -56,6 +61,7 @@ export default function DocumentsPage() {
         if (filterStatus) filters.status = filterStatus
         if (filterCat) filters.category_id = filterCat
         if (filterUser) filters.uploaded_by = filterUser
+        if (filterRisk) filters.risk_level = filterRisk
         results = await getDocuments(filters)
       }
       setDocs(results)
@@ -64,7 +70,7 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [query, filterStatus, filterCat, filterUser, skip])
+  }, [query, filterStatus, filterCat, filterUser, filterRisk, skip])
 
   const refreshStats = useCallback(() => {
     getStatsByCategory().then(setCategoryStats).catch(console.error)
@@ -79,7 +85,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     setLoading(true)
     fetchDocs()
-  }, [query, filterStatus, filterCat, filterUser, skip]) // eslint-disable-line
+  }, [query, filterStatus, filterCat, filterUser, filterRisk, skip]) // eslint-disable-line
 
   useEffect(() => {
     const hasPending = docs.some((d) => d.status === 'pending' || d.status === 'processing')
@@ -133,10 +139,12 @@ export default function DocumentsPage() {
     setFilterStatus('')
     setFilterCat('')
     setFilterUser('')
+    setFilterRisk('')
+    setSearchParams({})
     setSkip(0)
   }
 
-  const hasFilters = query || filterStatus || filterCat || filterUser
+  const hasFilters = query || filterStatus || filterCat || filterUser || filterRisk
 
   return (
     <Layout title="Documentos">
@@ -199,7 +207,6 @@ export default function DocumentsPage() {
           >
             <option value="">Todos los estados</option>
             <option value="classified">Clasificado</option>
-            <option value="pending_approval">Aprobación</option>
             <option value="pending">Pendiente</option>
             <option value="processing">Procesando</option>
             <option value="review">Revisión</option>
@@ -238,6 +245,16 @@ export default function DocumentsPage() {
                 <option key={u.user_id} value={u.user_id}>{u.user_name} ({u.count})</option>
               ))}
             </select>
+          )}
+
+          {filterRisk && (
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full cursor-pointer"
+              style={{ backgroundColor: 'var(--color-ai-subtle)', color: 'var(--color-ai-accent)' }}
+              onClick={() => { setFilterRisk(''); setSearchParams({}); setSkip(0) }}
+            >
+              Riesgo: {RISK_LABELS[filterRisk] ?? filterRisk} <X size={11} />
+            </span>
           )}
 
           {hasFilters && (
@@ -288,7 +305,6 @@ export default function DocumentsPage() {
                     onReclassify={setSelectedDoc}
                     onDelete={setDeleteTarget}
                     onReprocess={handleReprocess}
-                    onApprove={setSelectedDoc}
                   />
                 ))}
               </tbody>

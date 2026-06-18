@@ -1,4 +1,4 @@
-import { Image, MoreVertical, Download, Eye, RefreshCw, Trash2, RotateCcw, CheckCircle } from 'lucide-react'
+import { Image, MoreVertical, Download, Eye, RefreshCw, Trash2, RotateCcw } from 'lucide-react'
 import Badge from '../UI/Badge'
 import ActionMenu from '../UI/ActionMenu'
 import { useAuth } from '../../context/AuthContext'
@@ -37,23 +37,19 @@ function formatSize(kb) {
 }
 
 /**
- * @param {{ doc, categories, onView, onDownload, onReclassify, onDelete, onReprocess, onApprove }} props
+ * @param {{ doc, categories, onView, onDownload, onReclassify, onDelete, onReprocess }} props
  */
-export default function DocumentRow({ doc, categories = [], onView, onDownload, onReclassify, onDelete, onReprocess, onApprove }) {
+export default function DocumentRow({ doc, categories = [], onView, onDownload, onReclassify, onDelete, onReprocess }) {
   const { isAdmin, isEditor } = useAuth()
 
   const category = categories.find((c) => c.id === doc.category_id)
   const score    = doc.ai_confidence_score
   const canReclassify = isEditor && doc.status !== 'pending' && doc.status !== 'processing'
   const canReprocess  = isEditor && (doc.status === 'review' || doc.status === 'error')
-  const canApprove    = isEditor && doc.status === 'pending_approval'
 
   const menuItems = [
     { label: 'Ver detalle',  icon: Eye,       onClick: () => onView?.(doc) },
     { label: 'Descargar',    icon: Download,  onClick: () => onDownload?.(doc) },
-    ...(canApprove
-      ? [{ label: 'Aprobar / Rechazar', icon: CheckCircle, onClick: () => onApprove?.(doc) }]
-      : []),
     ...(canReclassify
       ? [{ label: 'Reclasificar', icon: RefreshCw, onClick: () => onReclassify?.(doc) }]
       : []),

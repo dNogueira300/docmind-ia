@@ -75,7 +75,7 @@ export default function UsersPage() {
 
   const handleToggleActive = async (u) => {
     try {
-      await updateUser(u.id, { is_active: !u.is_active })
+      await updateUser(u.id, { active: !u.active })
       load()
     } catch (err) {
       console.error(err)
@@ -137,13 +137,13 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
-                          u.is_active
+                          u.active
                             ? 'bg-[var(--color-success-bg)] text-[var(--color-success)]'
                             : 'bg-[var(--color-bg-surface-2)] text-[var(--color-text-muted)]'
                         }`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-[var(--color-success)]' : 'bg-[var(--color-text-muted)]'}`} />
-                        {u.is_active ? 'Activo' : 'Inactivo'}
+                        <span className={`w-1.5 h-1.5 rounded-full ${u.active ? 'bg-[var(--color-success)]' : 'bg-[var(--color-text-muted)]'}`} />
+                        {u.active ? 'Activo' : 'Inactivo'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -157,14 +157,14 @@ export default function UsersPage() {
                         </button>
                         <button
                           onClick={() => handleToggleActive(u)}
-                          title={u.is_active ? 'Desactivar' : 'Activar'}
+                          title={u.active ? 'Desactivar' : 'Activar'}
                           className={`p-1.5 rounded-[var(--radius-sm)] transition-colors ${
-                            u.is_active
+                            u.active
                               ? 'text-[var(--color-text-muted)] hover:bg-[var(--color-error-bg)] hover:text-[var(--color-error)]'
                               : 'text-[var(--color-text-muted)] hover:bg-[var(--color-success-bg)] hover:text-[var(--color-success)]'
                           }`}
                         >
-                          {u.is_active ? <UserX size={13} /> : <UserCheck size={13} />}
+                          {u.active ? <UserX size={13} /> : <UserCheck size={13} />}
                         </button>
                       </div>
                     </td>

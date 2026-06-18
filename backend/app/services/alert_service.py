@@ -109,25 +109,25 @@ def _parse_date(raw: str) -> Optional[date]:
 
 def _build_alert_title(text: str, m: "re.Match", alert_type: str) -> str:
     """
-    Genera un título legible usando NER (spaCy) para extraer el SUJETO
-    real de la cláusula de vencimiento.
-
-    Ejemplo:
-      "La licencia de uso del módulo NLP vence el 30 de junio…"
-      → "Vencimiento: licencia de uso del módulo NLP"
+    Genera una descripción clara para la alerta.
+    Intenta usar Gemini primero; cae a NER/heurística si no está disponible.
     """
-    from app.services.ner_service import extract_subject  # noqa: PLC0415
-
     label = _TYPE_LABELS.get(alert_type, 'Alerta')
 
-    # Extraer la oración que contiene el match
+    # Extraer oración de contexto (con mayor ventana para Gemini)
     sentence_start = max(0, text.rfind('.', 0, m.start()) + 1)
-    sentence_end   = min(len(text), m.end() + 50)
+    sentence_end   = min(len(text), m.end() + 150)
     sentence       = text[sentence_start:sentence_end].strip()
 
-    # Posición del trigger dentro de la oración
-    trigger_pos = m.start() - sentence_start
+    # Intentar con Gemini para descripción más clara
+    from app.services import gemini_service  # noqa: PLC0415
+    desc = gemini_service.generate_alert_description(sentence, alert_type)
+    if desc:
+        return desc
 
+    # Fallback: NER spaCy
+    from app.services.ner_service import extract_subject  # noqa: PLC0415
+    trigger_pos = m.start() - sentence_start
     subject = extract_subject(sentence, trigger_pos)
     subject = _clean_subject_text(subject)
 
@@ -144,9 +144,9 @@ def _clean_subject_text(subject: str) -> str:
     s = s.rstrip('.,;:').strip()
     s = re.sub(r'^(?:la |el |los |las |de |del |que |y |e )', '', s, flags=re.IGNORECASE)
     s = s.strip().capitalize()
-    if len(s) > 80:
-        cut = s.rfind(' ', 0, 80)
-        s = s[:cut] if cut > 30 else s[:80]
+    if len(s) > 200:
+        cut = s.rfind(' ', 0, 200)
+        s = s[:cut] if cut > 50 else s[:200]
     return s
 
 

@@ -21,7 +21,7 @@ def process_document(document_id: str, db: Session) -> None:
       2. OCR
       3. Resumen automático (ai_summary)
       4. Generación .docx
-      5. NLP clasificación (o pending_approval si la categoría lo requiere)
+      5. NLP clasificación (classified si score ≥ umbral, review si no)
       6. Alertas de vencimiento
       7. Evaluación de riesgo
     """
@@ -125,13 +125,7 @@ def process_document(document_id: str, db: Session) -> None:
         doc.category_id = matched.id
         doc.ai_confidence_score = score
 
-        # Si la categoría requiere aprobación y el score es suficiente,
-        # ir a pending_approval en lugar de classified.
-        if matched.requires_approval and score >= CONFIDENCE_THRESHOLD:
-            doc.status = DocStatus.pending_approval
-            _create_approval_request(db, doc)
-            logger.info(f"Pipeline: categoría '{matched.name}' requiere aprobación → pending_approval")
-        elif score < CONFIDENCE_THRESHOLD:
+        if score < CONFIDENCE_THRESHOLD:
             doc.status = DocStatus.review
             logger.info(f"Pipeline: score bajo ({score:.2f}) → review. Doc={document_id}")
         else:
@@ -179,19 +173,3 @@ def process_document(document_id: str, db: Session) -> None:
             logger.error(f"No se pudo marcar error: {inner}")
 
 
-def _create_approval_request(db: Session, doc: Document) -> None:
-    """Crea un registro de aprobación pendiente para el documento."""
-    from app.models.approval import DocumentApproval, ApprovalStatus
-
-    approval = DocumentApproval(
-        document_id=doc.id,
-        organization_id=doc.organization_id,
-        requested_by=doc.uploaded_by,
-        status=ApprovalStatus.pending,
-    )
-    db.add(approval)
-    try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        logger.error(f"Error creando aprobación para doc={doc.id}: {exc}")

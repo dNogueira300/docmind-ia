@@ -56,8 +56,8 @@ export default function ChatPanel({ documentId, docName, initiallyOpen = false }
     if (open) setTimeout(() => inputRef.current?.focus(), 100)
   }, [open])
 
-  const handleSend = async () => {
-    const msg = input.trim()
+  const handleSend = async (text) => {
+    const msg = (text ?? input).trim()
     if (!msg || loading) return
 
     setInput('')
@@ -141,7 +141,7 @@ export default function ChatPanel({ documentId, docName, initiallyOpen = false }
                   {['¿De qué trata?', '¿Quiénes son las partes?', '¿Cuándo vence?'].map((s) => (
                     <button
                       key={s}
-                      onClick={() => { setInput(s); inputRef.current?.focus() }}
+                      onClick={() => handleSend(s)}
                       className="text-[10px] px-2 py-1 rounded-full border transition-colors"
                       style={{
                         borderColor: 'var(--color-primary-border)',
@@ -165,7 +165,7 @@ export default function ChatPanel({ documentId, docName, initiallyOpen = false }
                   className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
                   style={{ backgroundColor: 'var(--color-ai-subtle)', border: '1px solid var(--color-primary-border)' }}
                 >
-                  <Bot size={11} style={{ color: 'var(--color-ai-accent)' }} />
+                  <BrainCircuit size={11} style={{ color: 'var(--color-ai-accent)' }} />
                 </div>
                 <div
                   className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-md)] text-xs"
@@ -201,7 +201,7 @@ export default function ChatPanel({ documentId, docName, initiallyOpen = false }
               }}
             />
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!input.trim() || loading}
               className="p-2 rounded-[var(--radius-md)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}

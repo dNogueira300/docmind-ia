@@ -29,6 +29,14 @@ class AuditAction(str, enum.Enum):
     user_password = "user_password"
     user_deactivate = "user_deactivate"
     user_activate = "user_activate"
+    # Gestión de categorías
+    category_create = "category_create"
+    category_update = "category_update"
+    category_delete = "category_delete"
+    # Gestión de reglas de riesgo
+    rule_create = "rule_create"
+    rule_update = "rule_update"
+    rule_delete = "rule_delete"
 
 
 class AuditLog(Base):

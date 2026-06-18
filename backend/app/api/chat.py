@@ -18,7 +18,8 @@ from app.models.user import User
 from app.models.document import Document
 from app.models.category import Category
 from app.models.alert import DocumentAlert, AlertStatus
-from app.models.approval import DocumentApproval, ApprovalStatus
+from app.models.risk_rule import RiskRule
+
 from app.services import gemini_service
 
 router = APIRouter(prefix="/chat", tags=["Chatbot"])
@@ -78,21 +79,78 @@ async def global_chat(
         Document.organization_id == organization_id
     ).group_by(UserModel.name).order_by(func.count(Document.id).desc()).limit(5).all()
 
+    # ── Consultas adicionales de contexto ────────────────────────────────────
+
     recent = db.query(
         Document.original_filename, Document.status, Document.created_at
     ).filter(Document.organization_id == organization_id).order_by(
         Document.created_at.desc()
     ).limit(5).all()
 
-    pending_alerts = db.query(func.count(DocumentAlert.id)).filter(
-        DocumentAlert.organization_id == organization_id,
-        DocumentAlert.status == AlertStatus.pending,
+    # Alertas pendientes con detalle
+    alerts_detail = (
+        db.query(
+            DocumentAlert.alert_type,
+            DocumentAlert.alert_date,
+            DocumentAlert.detected_date,
+            DocumentAlert.detail,
+            Document.original_filename,
+        )
+        .join(Document, Document.id == DocumentAlert.document_id)
+        .filter(
+            DocumentAlert.organization_id == organization_id,
+            DocumentAlert.status == AlertStatus.pending,
+        )
+        .order_by(DocumentAlert.alert_date.asc())
+        .limit(10)
+        .all()
+    )
+
+    # Documentos que necesitan atención (review o error)
+    attention_docs = (
+        db.query(Document.original_filename, Document.status, Document.updated_at)
+        .filter(
+            Document.organization_id == organization_id,
+            Document.status.in_(["review", "error"]),
+        )
+        .order_by(Document.updated_at.desc())
+        .limit(10)
+        .all()
+    )
+
+    # Usuarios de la organización con su rol
+    users_summary = (
+        db.query(UserModel.name, UserModel.role, UserModel.active)
+        .filter(UserModel.organization_id == organization_id)
+        .order_by(UserModel.role, UserModel.name)
+        .all()
+    )
+
+    # Almacenamiento total usado
+    storage_kb = db.query(func.coalesce(func.sum(Document.file_size_kb), 0)).filter(
+        Document.organization_id == organization_id
     ).scalar() or 0
 
-    pending_approvals = db.query(func.count(DocumentApproval.id)).filter(
-        DocumentApproval.organization_id == organization_id,
-        DocumentApproval.status == ApprovalStatus.pending,
-    ).scalar() or 0
+    # Reglas de riesgo activas de la organización
+    risk_rules = (
+        db.query(RiskRule)
+        .filter(RiskRule.organization_id == organization_id, RiskRule.active.is_(True))
+        .order_by(RiskRule.risk_level)
+        .all()
+    )
+
+    # Documentos con riesgo no-bajo (para que el chatbot pueda explicar casos concretos)
+    risky_docs = (
+        db.query(Document.original_filename, Document.risk_level, Category.name.label("category_name"))
+        .outerjoin(Category, Category.id == Document.category_id)
+        .filter(
+            Document.organization_id == organization_id,
+            Document.risk_level.in_(["medium", "high", "critical"]),
+        )
+        .order_by(Document.risk_level.desc(), Document.created_at.desc())
+        .limit(20)
+        .all()
+    )
 
     context = {
         "fecha_actual": datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M UTC"),
@@ -115,8 +173,52 @@ async def global_chat(
             }
             for r in recent
         ],
-        "alertas_pendientes": pending_alerts,
-        "aprobaciones_pendientes": pending_approvals,
+        "alertas_pendientes_detalle": [
+            {
+                "documento": a.original_filename,
+                "tipo": a.alert_type.value if hasattr(a.alert_type, "value") else str(a.alert_type),
+                "fecha_detectada": str(a.detected_date),
+                "fecha_alerta": str(a.alert_date),
+                "detalle": a.detail or "",
+            }
+            for a in alerts_detail
+        ],
+        "documentos_que_necesitan_atencion": [
+            {
+                "nombre": d.original_filename,
+                "estado": d.status.value if hasattr(d.status, "value") else str(d.status),
+                "ultima_actualizacion": str(d.updated_at)[:10],
+            }
+            for d in attention_docs
+        ],
+        "usuarios": [
+            {
+                "nombre": u.name,
+                "rol": u.role.value if hasattr(u.role, "value") else str(u.role),
+                "activo": u.active,
+            }
+            for u in users_summary
+        ],
+        "almacenamiento_total_kb": storage_kb,
+        "almacenamiento_total_mb": round(storage_kb / 1024, 2),
+        "reglas_de_riesgo": [
+            {
+                "nombre": rule.name,
+                "nivel": rule.risk_level.value if hasattr(rule.risk_level, "value") else rule.risk_level,
+                "descripcion": rule.description or "",
+                "palabras_clave": rule.keywords or [],
+                "tamaño_minimo_kb": rule.min_file_size_kb,
+            }
+            for rule in risk_rules
+        ],
+        "documentos_con_riesgo_elevado": [
+            {
+                "nombre": d.original_filename,
+                "nivel_riesgo": d.risk_level,
+                "categoria": d.category_name or "Sin categoría",
+            }
+            for d in risky_docs
+        ],
     }
 
     reply = gemini_service.chat_global(

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Files, CheckCircle, Clock, Upload, ArrowRight,
-  Bell, ShieldAlert, ThumbsUp,
+  Bell, ShieldAlert,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout/Layout'
@@ -13,7 +13,6 @@ import AlertCard from '../components/UI/AlertCard'
 import { getDocuments, getStatsByRisk } from '../services/api/documents'
 import { getCategories } from '../services/api/categories'
 import { getAlerts } from '../services/api/alerts'
-import { getApprovals } from '../services/api/approvals'
 import { useAuth } from '../context/AuthContext'
 
 function formatDate(iso) {
@@ -37,7 +36,6 @@ export default function DashboardPage() {
   const [docs, setDocs] = useState([])
   const [categories, setCategories] = useState([])
   const [alerts, setAlerts] = useState([])
-  const [approvals, setApprovals] = useState([])
   const [riskStats, setRiskStats] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -47,15 +45,13 @@ export default function DashboardPage() {
       getCategories(),
     ]
     if (isEditor) fetches.push(getAlerts({ status: 'pending', limit: 5 }))
-    if (isEditor) fetches.push(getApprovals({ status: 'pending', limit: 5 }))
     if (isAdmin) fetches.push(getStatsByRisk())
 
     Promise.allSettled(fetches).then((results) => {
       setDocs(results[0].value ?? [])
       setCategories(results[1].value ?? [])
       if (isEditor) setAlerts(results[2]?.value ?? [])
-      if (isEditor) setApprovals(results[3]?.value ?? [])
-      if (isAdmin) setRiskStats(results[isEditor ? 4 : 2]?.value ?? [])
+      if (isAdmin) setRiskStats(results[isEditor ? 3 : 2]?.value ?? [])
     }).finally(() => setLoading(false))
   }
 
@@ -171,48 +167,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Pendientes de aprobación */}
-        {isEditor && approvals.length > 0 && (
-          <div
-            className="rounded-[var(--radius-lg)] overflow-hidden anim-fade-in-up"
-            style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}
-          >
-            <div className="px-5 py-3.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ThumbsUp size={15} style={{ color: 'var(--color-primary)' }} />
-                <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                  Pendientes de aprobación
-                </h2>
-              </div>
-              <Link
-                to={link('documents') + '?status=pending_approval'}
-                className="text-xs font-medium flex items-center gap-1 hover:gap-1.5 transition-all"
-                style={{ color: 'var(--color-primary)' }}
-              >
-                Ver todos <ArrowRight size={11} />
-              </Link>
-            </div>
-            <div style={{ height: 1, background: 'linear-gradient(to right, transparent, var(--color-border) 20%, var(--color-border) 80%, transparent)' }} />
-            <ul className="divide-y divide-[var(--color-border)]">
-              {approvals.map((appr) => (
-                <li key={appr.id} className="px-5 py-3 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
-                      Documento #{appr.document_id.slice(0, 8)}…
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                      Solicitado: {formatDate(appr.requested_at)}
-                    </p>
-                  </div>
-                  <Badge type="status" value="pending_approval" />
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {/* Mapa de riesgo */}
-        {isAdmin && riskStats.length > 0 && (
+        {isAdmin && (
           <div
             className="rounded-[var(--radius-lg)] overflow-hidden anim-fade-in-up"
             style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}
@@ -222,23 +178,56 @@ export default function DashboardPage() {
               <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                 Mapa de riesgo
               </h2>
+              {Object.values(riskMap).some((v) => v > 0) && (
+                <span className="ml-auto text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Clic para ver documentos
+                </span>
+              )}
             </div>
             <div style={{ height: 1, background: 'linear-gradient(to right, transparent, var(--color-border) 20%, var(--color-border) 80%, transparent)' }} />
             <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {RISK_ORDER.map((level) => (
-                <div
-                  key={level}
-                  className="flex flex-col items-center gap-1 p-3 rounded-[var(--radius-md)]"
-                  style={{ backgroundColor: 'var(--color-bg-surface-2)' }}
-                >
-                  <span className="text-2xl font-bold" style={{ color: RISK_COLORS[level] }}>
-                    {riskMap[level] ?? 0}
-                  </span>
-                  <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                    {RISK_LABELS[level]}
-                  </span>
-                </div>
-              ))}
+              {RISK_ORDER.map((level) => {
+                const count = riskMap[level] ?? 0
+                const tileContent = (
+                  <>
+                    <span className="text-2xl font-bold" style={{ color: count > 0 ? RISK_COLORS[level] : 'var(--color-text-muted)' }}>
+                      {count}
+                    </span>
+                    <span className="text-xs font-semibold" style={{ color: count > 0 ? RISK_COLORS[level] : 'var(--color-text-muted)' }}>
+                      {RISK_LABELS[level]}
+                    </span>
+                    <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                      {count === 1 ? 'documento' : 'documentos'}
+                    </span>
+                  </>
+                )
+                const tileStyle = {
+                  backgroundColor: count > 0 ? `color-mix(in srgb, ${RISK_COLORS[level]} 10%, var(--color-bg-surface-2))` : 'var(--color-bg-surface-2)',
+                  border: `1px solid ${count > 0 ? RISK_COLORS[level] + '40' : 'transparent'}`,
+                  textDecoration: 'none',
+                }
+                if (count === 0) {
+                  return (
+                    <div
+                      key={level}
+                      className="flex flex-col items-center gap-1 p-3 rounded-[var(--radius-md)] opacity-50 cursor-default"
+                      style={tileStyle}
+                    >
+                      {tileContent}
+                    </div>
+                  )
+                }
+                return (
+                  <Link
+                    key={level}
+                    to={link('documents') + `?risk=${level}`}
+                    className="flex flex-col items-center gap-1 p-3 rounded-[var(--radius-md)] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
+                    style={tileStyle}
+                  >
+                    {tileContent}
+                  </Link>
+                )
+              })}
             </div>
           </div>
         )}
