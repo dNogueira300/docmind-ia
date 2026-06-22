@@ -20,16 +20,13 @@ def _get_client() -> Minio:
 
 
 def _get_public_client() -> Minio:
-    """Cliente usado solo para firmar URLs accesibles desde el browser.
-
-    Usa `minio_public_endpoint` (hostname resoluble por el navegador) en vez del
-    endpoint interno, que en Railway solo existe en la red privada.
-    """
+    """Cliente para firmar URLs accesibles desde el browser."""
     return Minio(
         endpoint=settings.minio_public_endpoint,
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=settings.minio_public_secure,
+        region="us-east-1",  # evita GetBucketLocation al endpoint público
     )
 
 
@@ -102,7 +99,10 @@ def get_presigned_url(
     response_filename: str | None = None,
 ) -> str:
     """
-    Genera URL firmada accesible desde el browser via hosts file.
+    Genera URL firmada accesible desde el browser.
+
+    Firma con el cliente público (endpoint resoluble por el navegador). La región
+    fija evita el GetBucketLocation que fallaría contra el endpoint público.
 
     Si `response_filename` se pasa, fuerza un nombre amigable al descargar
     (Content-Disposition: attachment; filename=...).
