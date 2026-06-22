@@ -25,8 +25,9 @@ _OCR_ATTEMPTS = [
     (False, "eng",     3),
 ]
 
-# DPI a probar en orden
-_DPI_SEQUENCE = [300, 200, 150]
+# DPI a probar en orden. Reducido para producción (Railway): rasterizar a 300 DPI
+# PDFs de varias páginas consume mucha memoria/CPU. Secuencia escalada ×0.5.
+_DPI_SEQUENCE = [150, 100, 75]
 
 # Por encima de este umbral consideramos el resultado "suficientemente bueno"
 # y dejamos de probar combinaciones. 500 chars ≈ un párrafo completo.
@@ -152,7 +153,7 @@ def _analyze_image(img: "Image.Image") -> dict:
 
 
 def _ocr_best_attempt(
-    img: "Image.Image", page_num: int = 1, total: int = 1, dpi: int = 300
+    img: "Image.Image", page_num: int = 1, total: int = 1, dpi: int = 150
 ) -> str:
     """
     Prueba la secuencia de intentos OCR y devuelve el mejor resultado.
