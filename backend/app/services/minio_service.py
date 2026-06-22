@@ -1,5 +1,6 @@
 """Servicio de almacenamiento de archivos en MinIO."""
 import io
+import logging
 from datetime import timedelta
 from uuid import UUID
 
@@ -7,6 +8,8 @@ from minio import Minio
 from minio.error import S3Error
 
 from app.core.config import settings
+
+logger = logging.getLogger("docmind")
 
 
 def _get_client() -> Minio:
@@ -127,8 +130,14 @@ def get_presigned_url(
         response_headers=response_headers,
     )
     # El esquema no se firma en SigV4 → seguro reescribirlo tras firmar.
-    if settings.minio_public_secure:
+    # MINIO_PUBLIC_SECURE no es fiable (en Railway está en false), así que el
+    # esquema se decide por el host: localhost (dev) va por HTTP; cualquier otro
+    # endpoint (dominio público de Railway) se sirve por HTTPS.
+    public_host = settings.minio_public_endpoint
+    is_local = public_host.startswith(("localhost", "127.0.0.1"))
+    if not is_local:
         url = url.replace("http://", "https://", 1)
+    logger.info("Presigned URL generada: %s", url)
     return url
 
 
