@@ -4,8 +4,10 @@ Servicio NLP: clasificación de documentos en español.
 Estrategia híbrida:
   1) Heurística por palabras clave en español (rápida, sin modelo, alta precisión
      para tipos comunes: contratos, facturas, informes, resoluciones, etc.).
-  2) Si la heurística no es concluyente, se usa zero-shot multilingüe
-     (MoritzLaurer/mDeBERTa-v3-base-mnli-xnli — funciona bien en español).
+  2) Si la heurística no es concluyente, se usa zero-shot multilingüe.
+     El modelo se elige por entorno: producción usa MiniLMv2-L6 (ligero, ~1/3
+     de la RAM, evita OOM en Railway) y desarrollo usa mDeBERTa-base (más
+     preciso). Override con la env var NLP_MODEL. Ambos funcionan en español.
   3) Si todo falla, se elige la mejor etiqueta disponible. NUNCA se devuelve
      "Sin clasificar" cuando hay texto y categorías → el documento no se queda
      atascado en `review`.
@@ -15,13 +17,30 @@ import re
 import unicodedata
 from typing import Optional
 
+from app.core.config import settings
+
 logger = logging.getLogger("docmind")
 
 # ── Singleton del pipeline (lazy load) ───────────────────────────────────────
 _classifier = None
 
-# Modelo multilingüe entrenado en XNLI — soporta español nativamente
-MODEL_NAME = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
+# Modelos multilingües entrenados en XNLI — ambos soportan español nativamente.
+# Pesado (~278M params): más preciso, para desarrollo local con RAM holgada.
+# Ligero (~107M params): ~1/3 de la pico de RAM, para producción (Railway) y
+# evitar el OOM al cargar el modelo.
+_MODEL_HEAVY = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
+_MODEL_LIGHT = "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli"
+
+
+def _resolve_model_name() -> str:
+    """Elige el modelo zero-shot según config/entorno.
+
+    Prioridad: NLP_MODEL (settings.nlp_model) si se define; si no, en producción
+    el ligero y en cualquier otro entorno el pesado.
+    """
+    if settings.nlp_model:
+        return settings.nlp_model
+    return _MODEL_LIGHT if settings.environment == "production" else _MODEL_HEAVY
 
 # Hipótesis en español: imprescindible para que el zero-shot funcione bien
 HYPOTHESIS_TEMPLATE = "Este documento es un/una {}."
@@ -163,18 +182,25 @@ def _get_classifier():
     """Carga el pipeline zero-shot la primera vez (puede tardar ~30s)."""
     global _classifier
     if _classifier is None:
+        model_name = _resolve_model_name()
         try:
             from transformers import pipeline  # noqa: PLC0415
 
-            logger.info(f"Cargando modelo NLP: {MODEL_NAME} (puede tardar)")
+            logger.info(
+                f"Cargando modelo NLP: {model_name} "
+                f"(entorno={settings.environment}, puede tardar)"
+            )
+            # low_cpu_mem_usage reduce el pico de RAM durante la carga de pesos
+            # (carga incremental vía meta device) — evita el OOM en Railway.
             _classifier = pipeline(
                 "zero-shot-classification",
-                model=MODEL_NAME,
+                model=model_name,
+                model_kwargs={"low_cpu_mem_usage": True},
             )
             logger.info("Modelo NLP cargado correctamente")
         except Exception as exc:
             logger.warning(
-                f"No se pudo cargar el modelo NLP '{MODEL_NAME}': {exc}. "
+                f"No se pudo cargar el modelo NLP '{model_name}': {exc}. "
                 "Se usará solo la heurística por keywords."
             )
     return _classifier

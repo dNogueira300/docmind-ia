@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # Google Gemini API
     gemini_api_key: Optional[str] = None
 
+    # NLP / clasificación zero-shot.
+    # Override explícito del modelo. Si es None, nlp_service elige por entorno:
+    # producción → modelo ligero (menos RAM); resto → modelo pesado (más preciso).
+    nlp_model: Optional[str] = None
+
     @property
     def db_url(self) -> str:
         """Usa URL local solo cuando NO estamos en Docker."""
