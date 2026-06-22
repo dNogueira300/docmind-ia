@@ -20,12 +20,17 @@ def _get_client() -> Minio:
 
 
 def _get_public_client() -> Minio:
-    """Cliente para firmar URLs accesibles desde el browser."""
+    """Cliente para firmar URLs accesibles desde el browser.
+
+    `secure=False` fijo: el cliente solo firma (no conecta), y el esquema final
+    (http/https) se ajusta sobre la URL en get_presigned_url según
+    minio_public_secure. El esquema no forma parte de la firma SigV4.
+    """
     return Minio(
         endpoint=settings.minio_public_endpoint,
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
-        secure=settings.minio_public_secure,
+        secure=False,
         region="us-east-1",  # evita GetBucketLocation al endpoint público
     )
 
@@ -115,12 +120,16 @@ def get_presigned_url(
                 f'attachment; filename="{response_filename}"'
             )
         }
-    return client.presigned_get_object(
+    url = client.presigned_get_object(
         bucket_name=settings.minio_bucket,
         object_name=stored_path,
         expires=timedelta(seconds=expires_seconds),
         response_headers=response_headers,
     )
+    # El esquema no se firma en SigV4 → seguro reescribirlo tras firmar.
+    if settings.minio_public_secure:
+        url = url.replace("http://", "https://", 1)
+    return url
 
 
 def get_file_bytes(stored_path: str) -> bytes:
