@@ -55,3 +55,16 @@ class CategoryResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CategorySuggestionResponse(BaseModel):
+    """Sugerencia de categoría propuesta por la IA, pendiente de aprobación."""
+    id: UUID
+    organization_id: UUID
+    document_id: Optional[UUID] = None
+    suggested_name: str
+    confidence: Optional[float] = None
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

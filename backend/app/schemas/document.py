@@ -16,6 +16,7 @@ class DocumentResponse(BaseModel):
     original_filename: str
     stored_path: str
     digitalized_path: Optional[str] = None
+    ocr_pdf_path: Optional[str] = None
     file_type: str
     file_size_kb: Optional[int]
     ocr_text: Optional[str]
@@ -48,7 +49,13 @@ class DocumentListResponse(BaseModel):
     risk_level: Optional[str] = "low"
     status: DocStatus
     has_digitalized: bool = False
+    has_ocr_pdf: bool = False
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class DocumentSearchResult(DocumentListResponse):
+    """Resultado de búsqueda: agrega un fragmento del texto donde coincide la query."""
+    snippet: Optional[str] = None

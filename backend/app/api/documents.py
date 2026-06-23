@@ -20,8 +20,10 @@ from app.core.deps import (
 from app.models.user import User
 from app.models.document import Document, DocStatus
 from app.models.audit_log import AuditAction
-from app.schemas.document import DocumentResponse, DocumentListResponse, DocumentReclassify
-from app.services import minio_service
+from app.schemas.document import (
+    DocumentResponse, DocumentListResponse, DocumentReclassify, DocumentSearchResult,
+)
+from app.services import minio_service, gemini_service
 from app.services.audit_service import log_action
 from app.services.pipeline_service import process_document
 
@@ -235,8 +237,8 @@ async def upload_document(
 
 @router.get(
     "/search",
-    response_model=list[DocumentListResponse],
-    summary="Búsqueda combinada (nombre + contenido + fuzzy)",
+    response_model=list[DocumentSearchResult],
+    summary="Búsqueda combinada (nombre + contenido + fuzzy) con fragmento de texto",
 )
 async def search_documents(
     current_user: AnyRole,
@@ -250,9 +252,16 @@ async def search_documents(
             "(3) similitud fuzzy (pg_trgm) tolerante a errores tipográficos."
         ),
     ),
+    semantic: bool = Query(
+        default=False,
+        description=(
+            "Si es true, re-rankea los resultados del FTS por relevancia semántica "
+            "con Gemini (más lento). Si Gemini falla, mantiene el orden FTS."
+        ),
+    ),
     skip: int = 0,
     limit: int = 20,
-) -> list[Document]:
+) -> list[DocumentSearchResult]:
     """
     Búsqueda inteligente que combina tres estrategias y las une por OR:
 
@@ -278,6 +287,16 @@ async def search_documents(
     tsquery = func.plainto_tsquery("spanish", query_str)
     tsvector = func.to_tsvector("spanish", func.coalesce(Document.ocr_text, ""))
 
+    # Fragmento del texto donde coincide la query (línea de contexto). ts_headline
+    # devuelve una porción del ocr_text con los términos marcados entre «…».
+    snippet_expr = func.ts_headline(
+        "spanish",
+        func.coalesce(Document.ocr_text, ""),
+        tsquery,
+        "MaxFragments=1, MinWords=6, MaxWords=25, StartSel=«, StopSel=», "
+        "FragmentDelimiter= … ",
+    )
+
     # Scores parciales — se suman para ordenar (mayor primero).
     # Boost: match exacto de substring en el nombre vale 1.0 fijo.
     name_score = case(
@@ -300,8 +319,9 @@ async def search_documents(
         query_str, func.coalesce(Document.ocr_text, "")
     ) > fuzzy_threshold
 
-    return (
-        db.query(Document)
+    rows = (
+        db.query(Document, snippet_expr.label("snippet"))
+        .options(joinedload(Document.uploader))
         .filter(
             Document.organization_id == org_id,
             or_(cond_name_like, cond_name_fuzzy, cond_fts, cond_fuzzy_content),
@@ -314,6 +334,55 @@ async def search_documents(
         .limit(limit)
         .all()
     )
+
+    def _clean_snippet(doc: Document, raw: Optional[str]) -> Optional[str]:
+        # ts_headline solo resalta si hubo match FTS sobre ocr_text. Para matches
+        # solo por nombre/fuzzy (o sin marca «»), caemos al resumen IA.
+        if raw and "«" in raw:
+            return raw.strip()
+        return (doc.ai_summary or "").strip() or None
+
+    results = [
+        DocumentSearchResult(
+            id=doc.id,
+            organization_id=doc.organization_id,
+            category_id=doc.category_id,
+            uploaded_by=doc.uploaded_by,
+            uploader_name=doc.uploader.name if doc.uploader else None,
+            original_filename=doc.original_filename,
+            file_type=doc.file_type,
+            file_size_kb=doc.file_size_kb,
+            ai_summary=doc.ai_summary,
+            ai_confidence_score=doc.ai_confidence_score,
+            risk_level=doc.risk_level,
+            status=doc.status,
+            has_digitalized=doc.has_digitalized,
+            has_ocr_pdf=doc.has_ocr_pdf,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+            snippet=_clean_snippet(doc, snippet),
+        )
+        for doc, snippet in rows
+    ]
+
+    # Re-ranking semántico opcional con Gemini sobre los candidatos del FTS.
+    if semantic and results:
+        order = gemini_service.rerank_semantic(
+            query_str,
+            [
+                {"id": str(r.id), "filename": r.original_filename, "snippet": r.snippet or ""}
+                for r in results
+            ],
+        )
+        if order:
+            by_id = {str(r.id): r for r in results}
+            reordered = [by_id[i] for i in order if i in by_id]
+            # Anexar los que Gemini omitió, preservando su orden FTS.
+            seen = set(order)
+            reordered += [r for r in results if str(r.id) not in seen]
+            results = reordered
+
+    return results
 
 
 @router.get("/{document_id}", response_model=DocumentResponse, summary="Ver documento")
@@ -471,6 +540,58 @@ async def get_digitalized_url(
         action=AuditAction.download,
         document_id=doc.id,
         detail={"type": "digitalized_docx"},
+        ip_address=ip,
+    )
+
+    return {"download_url": url, "expires_in_seconds": 3600}
+
+
+@router.get(
+    "/{document_id}/ocr-pdf-url",
+    summary="URL firmada para descargar el PDF con capa de texto OCR (editable)",
+)
+async def get_ocr_pdf_url(
+    document_id: UUID,
+    request: Request,
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Devuelve la URL firmada del PDF con capa de texto OCR (mantiene la apariencia
+    del original pero el texto es seleccionable/editable). 404 si aún no existe.
+    """
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not doc.ocr_pdf_path:
+        raise HTTPException(
+            status_code=404,
+            detail="El documento aún no tiene PDF con OCR.",
+        )
+
+    base_name = doc.original_filename.rsplit(".", 1)[0] or "documento"
+    download_name = f"{base_name}.ocr.pdf"
+
+    url = minio_service.get_presigned_url(
+        doc.ocr_pdf_path,
+        response_filename=download_name,
+    )
+
+    ip = request.client.host if request.client else None
+    log_action(
+        db=db,
+        user_id=current_user.id,
+        action=AuditAction.download,
+        document_id=doc.id,
+        detail={"type": "ocr_pdf"},
         ip_address=ip,
     )
 

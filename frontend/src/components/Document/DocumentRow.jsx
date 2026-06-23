@@ -3,6 +3,7 @@ import Badge from '../UI/Badge'
 import ActionMenu from '../UI/ActionMenu'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../utils/datetime'
+import Snippet from '../UI/Snippet'
 
 function FileIcon({ type }) {
   const base = 'w-8 h-8 rounded-[var(--radius-md)] flex items-center justify-center shrink-0 text-[10px] font-semibold'
@@ -83,7 +84,12 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
             >
               {doc.original_filename}
             </p>
-            {doc.ai_summary ? (
+            {doc.snippet ? (
+              <Snippet
+                text={doc.snippet}
+                className="text-xs max-w-[260px] mt-0.5 line-clamp-2"
+              />
+            ) : doc.ai_summary ? (
               <p
                 className="text-xs truncate max-w-[220px] mt-0.5"
                 style={{ color: 'var(--color-text-muted)' }}

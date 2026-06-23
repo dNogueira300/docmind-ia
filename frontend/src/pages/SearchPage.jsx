@@ -8,6 +8,7 @@ import EmptyState from '../components/UI/EmptyState'
 import { searchDocuments } from '../services/api/documents'
 import { getCategories } from '../services/api/categories'
 import { useEffect } from 'react'
+import Snippet from '../components/UI/Snippet'
 
 export default function SearchPage() {
   const [query, setQuery] = useState('')
@@ -16,6 +17,7 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState(null)
+  const [semantic, setSemantic] = useState(false)
 
   useEffect(() => {
     getCategories().then(setCategories).catch(console.error)
@@ -27,7 +29,7 @@ export default function SearchPage() {
     setLoading(true)
     setSearched(true)
     try {
-      const data = await searchDocuments(query.trim())
+      const data = await searchDocuments(query.trim(), 0, 20, semantic)
       setResults(data)
     } catch (err) {
       console.error(err)
@@ -61,6 +63,17 @@ export default function SearchPage() {
           </button>
         </form>
 
+        {/* Toggle de búsqueda semántica con Gemini */}
+        <label className="flex items-center gap-2 text-xs cursor-pointer -mt-3 text-[var(--color-text-muted)]">
+          <input
+            type="checkbox"
+            checked={semantic}
+            onChange={(e) => setSemantic(e.target.checked)}
+            className="accent-[var(--color-ai-accent)]"
+          />
+          Búsqueda semántica con IA (Gemini) — reordena por relevancia de significado
+        </label>
+
         {/* Resultados */}
         {loading ? (
           <div className="flex justify-center py-10"><LoadingSpinner /></div>
@@ -87,6 +100,12 @@ export default function SearchPage() {
                     <p className="text-sm font-medium text-[var(--color-text-primary)]">{doc.original_filename}</p>
                     <Badge type="status" value={doc.status} />
                   </div>
+                  {doc.snippet && (
+                    <Snippet
+                      text={doc.snippet}
+                      className="text-xs mt-1.5 text-[var(--color-text-secondary)] leading-relaxed"
+                    />
+                  )}
                   {cat && (
                     <span className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-[var(--color-text-muted)]">
                       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />

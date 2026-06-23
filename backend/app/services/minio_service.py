@@ -101,6 +101,29 @@ def upload_digitalized_docx(
     return digitalized_path
 
 
+def upload_searchable_pdf(
+    pdf_bytes: bytes,
+    original_stored_path: str,
+) -> str:
+    """
+    Sube el PDF con capa de texto OCR junto al original.
+
+    Toma el `stored_path` del original y le agrega el sufijo `.ocr.pdf`,
+    manteniendo la misma jerarquía de carpetas (org_id/year/month/).
+    """
+    ocr_pdf_path = f"{original_stored_path}.ocr.pdf"
+
+    client = _get_client()
+    client.put_object(
+        bucket_name=settings.minio_bucket,
+        object_name=ocr_pdf_path,
+        data=io.BytesIO(pdf_bytes),
+        length=len(pdf_bytes),
+        content_type="application/pdf",
+    )
+    return ocr_pdf_path
+
+
 def get_presigned_url(
     stored_path: str,
     expires_seconds: int = 3600,

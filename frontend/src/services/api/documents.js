@@ -16,10 +16,10 @@ export async function uploadDocument(file) {
   return data
 }
 
-/** @param {string} q */
-export async function searchDocuments(q, skip = 0, limit = 20) {
+/** @param {string} q  @param {boolean} semantic re-ranking semántico con Gemini */
+export async function searchDocuments(q, skip = 0, limit = 20, semantic = false) {
   const { data } = await client.get('/api/v1/documents/search', {
-    params: { q, skip, limit },
+    params: { q, skip, limit, semantic },
   })
   return data
 }
@@ -45,6 +45,12 @@ export async function getPreviewUrl(id) {
 /** URL firmada para descargar el .docx digitalizado generado tras el OCR. */
 export async function getDigitalizedUrl(id) {
   const { data } = await client.get(`/api/v1/documents/${id}/digitalized-url`)
+  return data // { download_url, expires_in_seconds }
+}
+
+/** URL firmada para descargar el PDF con capa de texto OCR (editable). */
+export async function getOcrPdfUrl(id) {
+  const { data } = await client.get(`/api/v1/documents/${id}/ocr-pdf-url`)
   return data // { download_url, expires_in_seconds }
 }
 

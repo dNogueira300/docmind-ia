@@ -2,14 +2,53 @@
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocStatus
 from app.models.category import Category
+from app.models.category_suggestion import CategorySuggestion, SuggestionStatus
 from app.services import ocr_service, nlp_service, docx_service, minio_service
 from app.services import alert_service, risk_service, gemini_service
 
 logger = logging.getLogger("docmind")
+
+
+def _maybe_suggest_category(
+    db: Session, doc: Document, ocr_text: str, existing_names: list[str]
+) -> None:
+    """Si el documento no encaja en las categorías existentes, pide a Gemini una
+    categoría nueva y la guarda como sugerencia PENDIENTE (no la crea sola)."""
+    suggestion = gemini_service.suggest_category(
+        ocr_text, existing_names, doc_name=doc.original_filename
+    )
+    if not suggestion:
+        return
+    name, conf = suggestion
+
+    # Dedupe: ya existe una sugerencia PENDIENTE con ese nombre en la organización.
+    already = (
+        db.query(CategorySuggestion)
+        .filter(
+            CategorySuggestion.organization_id == doc.organization_id,
+            CategorySuggestion.status == SuggestionStatus.pending,
+            func.lower(CategorySuggestion.suggested_name) == name.lower(),
+        )
+        .first()
+    )
+    if already:
+        return
+
+    db.add(
+        CategorySuggestion(
+            organization_id=doc.organization_id,
+            document_id=doc.id,
+            suggested_name=name,
+            confidence=conf,
+        )
+    )
+    db.commit()
+    logger.info(f"Pipeline: sugerencia de categoría '{name}' creada para doc={doc.id}")
 
 CONFIDENCE_THRESHOLD = nlp_service.CONFIDENCE_THRESHOLD
 
@@ -87,6 +126,24 @@ def process_document(document_id: str, db: Session) -> None:
         except Exception as docx_exc:
             logger.error(f"Pipeline: error generando .docx para doc={document_id}: {docx_exc}", exc_info=True)
 
+        # ── 4b: PDF con capa de texto OCR (apariencia original + texto editable) ─
+        try:
+            ocr_pdf_bytes = ocr_service.build_searchable_pdf(
+                doc.stored_path, doc.file_type
+            )
+            if ocr_pdf_bytes:
+                doc.ocr_pdf_path = minio_service.upload_searchable_pdf(
+                    pdf_bytes=ocr_pdf_bytes,
+                    original_stored_path=doc.stored_path,
+                )
+                db.commit()
+                logger.info(f"Pipeline: PDF con OCR generado para doc={document_id}")
+        except Exception as ocrpdf_exc:
+            logger.error(
+                f"Pipeline: error generando PDF con OCR para doc={document_id}: {ocrpdf_exc}",
+                exc_info=True,
+            )
+
         # ── 5: Categorías y clasificación NLP ─────────────────────────────────
         categories = (
             db.query(Category)
@@ -112,9 +169,27 @@ def process_document(document_id: str, db: Session) -> None:
             doc.status = DocStatus.review
             doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
+            # Sin categorías aún: proponer una a partir del documento.
+            try:
+                _maybe_suggest_category(db, doc, ocr_text, [])
+            except Exception as sug_exc:
+                logger.error(
+                    f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
+                    exc_info=True,
+                )
             return
 
-        predicted_name, score = nlp_service.classify_document(ocr_text, category_names)
+        # Clasificación con Gemini (primario); heurística/zero-shot como fallback
+        # si Gemini no está disponible o falla.
+        gemini_result = gemini_service.classify_document(
+            ocr_text, category_names, doc_name=doc.original_filename
+        )
+        if gemini_result is not None:
+            predicted_name, score = gemini_result
+        else:
+            predicted_name, score = nlp_service.classify_document(
+                ocr_text, category_names
+            )
         matched = next((c for c in categories if c.name == predicted_name), None)
 
         if matched is None:
@@ -133,6 +208,16 @@ def process_document(document_id: str, db: Session) -> None:
 
         doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
+
+        # ── 5b: Sugerencia de categoría nueva si ninguna encajó bien ──────────
+        if score < CONFIDENCE_THRESHOLD:
+            try:
+                _maybe_suggest_category(db, doc, ocr_text, category_names)
+            except Exception as sug_exc:
+                logger.error(
+                    f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
+                    exc_info=True,
+                )
 
         # ── 6: Alertas de vencimiento ─────────────────────────────────────────
         try:

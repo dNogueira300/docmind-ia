@@ -10,7 +10,7 @@ import AlertCard from '../UI/AlertCard'
 import ChatPanel from './ChatPanel'
 import {
   getDownloadUrl, reclassifyDocument,
-  getPreviewUrl, getDigitalizedUrl, getDocument,
+  getPreviewUrl, getDigitalizedUrl, getOcrPdfUrl, getDocument,
 } from '../../services/api/documents'
 import { getAlerts } from '../../services/api/alerts'
 import { useAuth } from '../../context/AuthContext'
@@ -94,12 +94,14 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
   // Acciones
   const [downloading,     setDownloading]     = useState(false)
   const [downloadingDocx, setDownloadingDocx] = useState(false)
+  const [downloadingPdf,  setDownloadingPdf]  = useState(false)
   const [reclassifyMode,  setReclassifyMode]  = useState(false)
   const [selectedCat,     setSelectedCat]     = useState(initialDoc.category_id ?? '')
   const [reclassifying,   setReclassifying]   = useState(false)
 
   const category      = categories.find((c) => c.id === doc.category_id)
   const hasDigitalized = doc.has_digitalized || !!doc.digitalized_path
+  const hasOcrPdf      = doc.has_ocr_pdf || !!doc.ocr_pdf_path
   const stillProcessing = doc.status === 'pending' || doc.status === 'processing'
 
   /* ── Effects ─────────────────────────────────────────────────────────── */
@@ -156,6 +158,17 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
     } catch (err) {
       toast.error('No disponible', err.response?.data?.detail ?? 'El documento aún no ha sido digitalizado.')
     } finally { setDownloadingDocx(false) }
+  }
+
+  const handleDownloadOcrPdf = async () => {
+    setDownloadingPdf(true)
+    try {
+      const { download_url } = await getOcrPdfUrl(doc.id)
+      window.open(download_url, '_blank', 'noopener')
+      toast.success('Descargando PDF con OCR', 'El archivo se abrirá en nueva pestaña')
+    } catch (err) {
+      toast.error('No disponible', err.response?.data?.detail ?? 'Aún no hay PDF con OCR.')
+    } finally { setDownloadingPdf(false) }
   }
 
   const handleReclassify = async () => {
@@ -418,7 +431,12 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
                     </Button>
                     {hasDigitalized && (
                       <Button variant="ghost" size="sm" loading={downloadingDocx} onClick={handleDownloadDocx}>
-                        <Download size={13} /> Descargar .docx digitalizado
+                        <Download size={13} /> Descargar .docx (solo texto)
+                      </Button>
+                    )}
+                    {hasOcrPdf && (
+                      <Button variant="ghost" size="sm" loading={downloadingPdf} onClick={handleDownloadOcrPdf}>
+                        <Download size={13} /> Descargar PDF con OCR (editable)
                       </Button>
                     )}
                   </div>

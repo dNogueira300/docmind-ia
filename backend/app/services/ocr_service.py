@@ -1,6 +1,7 @@
 """Servicio OCR: extrae texto de PDFs e imágenes usando pytesseract y pypdf."""
 import io
 import logging
+from typing import Optional
 
 import pytesseract
 from PIL import Image
@@ -11,6 +12,10 @@ logger = logging.getLogger("docmind")
 
 MAX_OCR_CHARS = 10_000
 MIN_DIGITAL_TEXT_LENGTH = 50
+
+# DPI para rasterizar al generar el PDF con capa OCR. Equilibrio entre apariencia
+# y memoria (rasterizar alto en multipágina dispara la RAM en Railway).
+SEARCHABLE_PDF_DPI = 150
 
 # Secuencia de intentos: (usar_preprocesamiento, lang, psm)
 _OCR_ATTEMPTS = [
@@ -47,6 +52,54 @@ def extract_text(stored_path: str, file_type: str) -> str:
     except Exception as exc:
         logger.error(f"Error en OCR para '{stored_path}': {exc}")
         return ""
+
+
+def build_searchable_pdf(stored_path: str, file_type: str) -> Optional[bytes]:
+    """
+    Genera un PDF con capa de texto OCR sobre el documento original.
+
+    Mantiene la apariencia del original (la imagen) y añade una capa de texto
+    invisible seleccionable/editable en cualquier editor de PDF. Aplica a PDFs
+    escaneados e imágenes (jpg/png).
+
+    Returns:
+        Bytes del PDF, o None si no se pudo generar.
+    """
+    try:
+        file_bytes = minio_service.get_file_bytes(stored_path)
+
+        if file_type == "pdf":
+            from pdf2image import convert_from_bytes  # noqa: PLC0415
+            pages = convert_from_bytes(file_bytes, dpi=SEARCHABLE_PDF_DPI)
+        else:
+            pages = [Image.open(io.BytesIO(file_bytes))]
+
+        page_pdfs: list[bytes] = []
+        for img in pages:
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            page_pdfs.append(
+                pytesseract.image_to_pdf_or_hocr(img, lang="spa", extension="pdf")
+            )
+
+        if not page_pdfs:
+            return None
+        if len(page_pdfs) == 1:
+            return page_pdfs[0]
+
+        import pypdf  # noqa: PLC0415
+        writer = pypdf.PdfWriter()
+        for pb in page_pdfs:
+            writer.append(pypdf.PdfReader(io.BytesIO(pb)))
+        out = io.BytesIO()
+        writer.write(out)
+        return out.getvalue()
+
+    except Exception as exc:
+        logger.error(
+            f"Error generando PDF con OCR para '{stored_path}': {exc}", exc_info=True
+        )
+        return None
 
 
 def _extract_pdf(file_bytes: bytes) -> str:

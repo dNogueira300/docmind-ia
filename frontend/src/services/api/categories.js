@@ -22,3 +22,23 @@ export async function deleteCategory(id) {
   const { data } = await client.delete(`/api/v1/categories/${id}`)
   return data
 }
+
+/** Lista las sugerencias de categorías de la IA (por defecto, pendientes). */
+export async function getCategorySuggestions(statusFilter = 'pending') {
+  const { data } = await client.get('/api/v1/categories/suggestions', {
+    params: { status_filter: statusFilter },
+  })
+  return data
+}
+
+/** Aprueba una sugerencia → crea la categoría. */
+export async function approveCategorySuggestion(id) {
+  const { data } = await client.post(`/api/v1/categories/suggestions/${id}/approve`)
+  return data
+}
+
+/** Rechaza una sugerencia. */
+export async function rejectCategorySuggestion(id) {
+  const { data } = await client.post(`/api/v1/categories/suggestions/${id}/reject`)
+  return data
+}

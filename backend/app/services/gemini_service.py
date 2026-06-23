@@ -8,7 +8,9 @@ Funciones:
 Modelo: gemini-1.5-flash (free tier: 15 RPM, 1M tokens/día)
 SDK:    google-genai >= 1.0.0  (pip install google-genai)
 """
+import json
 import logging
+import re
 from typing import Optional
 
 from app.core.config import settings
@@ -127,6 +129,174 @@ def summarize_document(text: str, doc_name: str = "") -> str:
         logger.warning(f"Error en Gemini summarize: {exc}. Usando heurística.")
 
     return _fallback_summary(text)
+
+
+# ── Clasificación ───────────────────────────────────────────────────────────
+
+_CLASSIFY_PROMPT = """\
+Eres un clasificador de documentos administrativos y legales peruanos.
+Clasifica el siguiente documento en UNA de estas categorías EXACTAS:
+{categories}
+
+Responde SOLO con un JSON válido, sin texto adicional ni markdown:
+{{"categoria": "<nombre EXACTO de la lista>", "confianza": <número entre 0.0 y 1.0>}}
+
+Reglas:
+- "categoria" debe ser una copia literal de un nombre de la lista.
+- "confianza" indica qué tan seguro estás (1.0 = certeza total).
+- Si ninguna encaja bien, elige la más cercana con confianza baja (< 0.5).
+
+DOCUMENTO ("{doc_name}"):
+{text}
+"""
+
+_SUGGEST_PROMPT = """\
+Eres un organizador de taxonomías documentales. La organización ya tiene estas \
+categorías:
+{categories}
+
+El siguiente documento NO encaja bien en ninguna. Propón el nombre de UNA categoría \
+nueva, corta (1-3 palabras), en español, en singular o plural natural, que describa \
+el TIPO de documento (no su contenido específico). Ejemplos de buenos nombres: \
+"Facturas", "Contratos", "Resoluciones", "Licencias de software".
+
+Responde SOLO con un JSON válido, sin texto adicional ni markdown:
+{{"categoria_sugerida": "<nombre>", "confianza": <número entre 0.0 y 1.0>}}
+
+Si el documento sí encaja en una categoría existente o no amerita una nueva, responde:
+{{"categoria_sugerida": null, "confianza": 0.0}}
+
+DOCUMENTO ("{doc_name}"):
+{text}
+"""
+
+
+def _extract_json(raw: str) -> Optional[dict]:
+    """Extrae el primer objeto JSON de la respuesta (tolera fences ```json)."""
+    if not raw:
+        return None
+    cleaned = re.sub(r"```(?:json)?|```", "", raw).strip()
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def classify_document(
+    text: str, categories: list[str], doc_name: str = ""
+) -> Optional[tuple[str, float]]:
+    """
+    Clasifica el texto contra las categorías de la organización usando Gemini.
+
+    Returns:
+        (nombre_categoria, confianza) si Gemini responde y la categoría es válida;
+        None si Gemini no está disponible o falla → el caller aplica su fallback.
+    """
+    if not _is_available() or not text or not text.strip() or not categories:
+        return None
+    try:
+        client = _get_client()
+        prompt = _CLASSIFY_PROMPT.format(
+            categories="\n".join(f"- {c}" for c in categories),
+            doc_name=doc_name or "desconocido",
+            text=text[:4000],
+        )
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        data = _extract_json(response.text or "")
+        if not data:
+            return None
+        cat = str(data.get("categoria", "")).strip()
+        # La categoría debe existir en la lista (match case-insensitive).
+        match = next((c for c in categories if c.lower() == cat.lower()), None)
+        if not match:
+            return None
+        conf = max(0.0, min(1.0, float(data.get("confianza", 0.0))))
+        logger.info(f"Clasificación Gemini: '{match}' (confianza={conf:.2f})")
+        return (match, conf)
+    except Exception as exc:
+        logger.warning(f"Error en Gemini classify: {exc}")
+        return None
+
+
+def suggest_category(
+    text: str, existing_categories: list[str], doc_name: str = ""
+) -> Optional[tuple[str, float]]:
+    """
+    Propone una categoría NUEVA si el documento no encaja en las existentes.
+
+    Returns:
+        (nombre_sugerido, confianza) si Gemini propone una categoría nueva válida
+        que NO existe ya; None en cualquier otro caso.
+    """
+    if not _is_available() or not text or not text.strip():
+        return None
+    try:
+        client = _get_client()
+        prompt = _SUGGEST_PROMPT.format(
+            categories="\n".join(f"- {c}" for c in existing_categories) or "(ninguna)",
+            doc_name=doc_name or "desconocido",
+            text=text[:4000],
+        )
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        data = _extract_json(response.text or "")
+        if not data:
+            return None
+        name = data.get("categoria_sugerida")
+        if not name or not str(name).strip():
+            return None
+        name = str(name).strip()
+        # No sugerir algo que ya existe (case-insensitive).
+        if any(name.lower() == c.lower() for c in existing_categories):
+            return None
+        conf = max(0.0, min(1.0, float(data.get("confianza", 0.0))))
+        logger.info(f"Categoría sugerida por Gemini: '{name}' (confianza={conf:.2f})")
+        return (name, conf)
+    except Exception as exc:
+        logger.warning(f"Error en Gemini suggest_category: {exc}")
+        return None
+
+
+def rerank_semantic(query: str, candidates: list[dict]) -> Optional[list[str]]:
+    """
+    Re-rankea semánticamente candidatos de búsqueda (ya filtrados por FTS).
+
+    Args:
+        query: consulta en lenguaje natural del usuario.
+        candidates: lista de dicts {"id": str, "filename": str, "snippet": str}.
+
+    Returns:
+        Lista de IDs ordenada por relevancia semántica, o None si Gemini falla
+        (el caller mantiene el orden FTS original).
+    """
+    if not _is_available() or not query.strip() or not candidates:
+        return None
+    try:
+        client = _get_client()
+        items = "\n".join(
+            f'{i}. id={c["id"]} | {c.get("filename", "")} | {c.get("snippet", "")[:300]}'
+            for i, c in enumerate(candidates)
+        )
+        prompt = (
+            "Ordena estos documentos por relevancia semántica frente a la consulta "
+            f'del usuario: "{query}".\n\n'
+            f"DOCUMENTOS:\n{items}\n\n"
+            'Responde SOLO con un JSON: {"orden": ["<id1>", "<id2>", ...]} con los '
+            "ids de los documentos relevantes, del más al menos relevante. Omite los "
+            "irrelevantes."
+        )
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        data = _extract_json(response.text or "")
+        if not data or "orden" not in data:
+            return None
+        valid_ids = {c["id"] for c in candidates}
+        ordered = [str(i) for i in data["orden"] if str(i) in valid_ids]
+        return ordered or None
+    except Exception as exc:
+        logger.warning(f"Error en Gemini rerank_semantic: {exc}")
+        return None
 
 
 def chat(

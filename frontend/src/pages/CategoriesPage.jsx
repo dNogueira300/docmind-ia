@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Sparkles, Check, X } from 'lucide-react'
 import Layout from '../components/Layout/Layout'
 import Modal from '../components/UI/Modal'
 import Button from '../components/UI/Button'
 import Input from '../components/UI/Input'
 import LoadingSpinner from '../components/UI/LoadingSpinner'
 import EmptyState from '../components/UI/EmptyState'
-import { getCategories, createCategory, updateCategory, deleteCategory } from '../services/api/categories'
+import {
+  getCategories, createCategory, updateCategory, deleteCategory,
+  getCategorySuggestions, approveCategorySuggestion, rejectCategorySuggestion,
+} from '../services/api/categories'
 import { getDocuments } from '../services/api/documents'
 import { useToast } from '../context/ToastContext'
 import { Tag } from 'lucide-react'
@@ -26,9 +29,38 @@ export default function CategoriesPage() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestionBusy, setSuggestionBusy] = useState(null)  // id en proceso
 
   const load = () => getCategories().then(setCategories).catch(console.error).finally(() => setLoading(false))
-  useEffect(() => { load() }, [])
+  const loadSuggestions = () =>
+    getCategorySuggestions('pending').then(setSuggestions).catch(console.error)
+  useEffect(() => { load(); loadSuggestions() }, [])
+
+  const handleApproveSuggestion = async (s) => {
+    setSuggestionBusy(s.id)
+    try {
+      await approveCategorySuggestion(s.id)
+      toast.success('Categoría creada', s.suggested_name)
+      await Promise.all([load(), loadSuggestions()])
+    } catch (err) {
+      toast.error('Error', err.response?.data?.detail ?? 'No se pudo aprobar')
+    } finally {
+      setSuggestionBusy(null)
+    }
+  }
+
+  const handleRejectSuggestion = async (s) => {
+    setSuggestionBusy(s.id)
+    try {
+      await rejectCategorySuggestion(s.id)
+      await loadSuggestions()
+    } catch (err) {
+      toast.error('Error', err.response?.data?.detail ?? 'No se pudo rechazar')
+    } finally {
+      setSuggestionBusy(null)
+    }
+  }
 
   const openCreate = () => { setEditTarget(null); setForm(EMPTY_FORM); setError(''); setModalOpen(true) }
   const openEdit = (cat) => { setEditTarget(cat); setForm({ name: cat.name, color: cat.color, description: cat.description ?? '' }); setError(''); setModalOpen(true) }
@@ -97,6 +129,60 @@ export default function CategoriesPage() {
             <Plus size={14} /> Nueva categoría
           </Button>
         </div>
+
+        {/* Sugerencias de la IA pendientes de aprobación */}
+        {suggestions.length > 0 && (
+          <div
+            className="rounded-[var(--radius-lg)] border p-4 flex flex-col gap-3"
+            style={{ backgroundColor: 'var(--color-ai-subtle)', borderColor: 'var(--color-ai-accent)' }}
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles size={15} style={{ color: 'var(--color-ai-accent)' }} />
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-ai-accent)' }}>
+                Sugerencias de la IA ({suggestions.length})
+              </p>
+            </div>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              La IA propuso estas categorías a partir de documentos subidos. Apruébalas
+              para crearlas (respeta el límite de 10) o recházalas.
+            </p>
+            <ul className="flex flex-col gap-2">
+              {suggestions.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-center gap-3 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-[var(--radius-md)] px-3 py-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                      {s.suggested_name}
+                    </p>
+                    {s.confidence != null && (
+                      <p className="text-[11px] text-[var(--color-text-muted)]">
+                        Confianza IA: {Math.round(s.confidence * 100)}%
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleApproveSuggestion(s)}
+                    disabled={suggestionBusy === s.id || categories.length >= 10}
+                    title={categories.length >= 10 ? 'Límite de 10 categorías alcanzado' : 'Aprobar'}
+                    className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-success)] hover:bg-[var(--color-success-bg)] transition-colors disabled:opacity-40"
+                  >
+                    <Check size={15} />
+                  </button>
+                  <button
+                    onClick={() => handleRejectSuggestion(s)}
+                    disabled={suggestionBusy === s.id}
+                    title="Rechazar"
+                    className="p-1.5 rounded-[var(--radius-sm)] text-[var(--color-error)] hover:bg-[var(--color-error-bg)] transition-colors disabled:opacity-40"
+                  >
+                    <X size={15} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
           {loading ? (

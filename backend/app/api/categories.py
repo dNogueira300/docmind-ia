@@ -1,8 +1,10 @@
 """CRUD de categorías — aisladas por tenant (multi-tenant)."""
+from datetime import datetime, timezone
 from uuid import UUID
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,9 +14,12 @@ from app.core.deps import (
 )
 from app.models.user import User
 from app.models.category import Category
+from app.models.category_suggestion import CategorySuggestion, SuggestionStatus
 from app.models.document import Document
 from app.models.audit_log import AuditAction
-from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
+from app.schemas.category import (
+    CategoryCreate, CategoryUpdate, CategoryResponse, CategorySuggestionResponse,
+)
 from app.services.audit_service import log_action
 
 router = APIRouter(prefix="/categories", tags=["Categorías"])
@@ -98,6 +103,138 @@ async def create_category(
         ip_address=request.client.host if request.client else None,
     )
     return category
+
+
+# ── Sugerencias de categorías (propuestas por la IA) ──────────────────────────
+
+@router.get(
+    "/suggestions",
+    response_model=list[CategorySuggestionResponse],
+    summary="Listar sugerencias de categorías de la IA",
+)
+async def list_category_suggestions(
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+    status_filter: str = "pending",
+) -> list[CategorySuggestion]:
+    """Lista las sugerencias de categorías (por defecto solo las pendientes)."""
+    query = db.query(CategorySuggestion).filter(
+        CategorySuggestion.organization_id == organization_id
+    )
+    if status_filter:
+        query = query.filter(CategorySuggestion.status == status_filter)
+    return query.order_by(CategorySuggestion.created_at.desc()).all()
+
+
+@router.post(
+    "/suggestions/{suggestion_id}/approve",
+    response_model=CategoryResponse,
+    summary="Aprobar sugerencia → crea la categoría",
+)
+async def approve_category_suggestion(
+    suggestion_id: UUID,
+    request: Request,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> Category:
+    """Aprueba una sugerencia: crea la categoría (respetando el límite de 10) y
+    marca la sugerencia como aprobada."""
+    suggestion = (
+        db.query(CategorySuggestion)
+        .filter(
+            CategorySuggestion.id == suggestion_id,
+            CategorySuggestion.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Sugerencia no encontrada")
+    if suggestion.status != SuggestionStatus.pending:
+        raise HTTPException(status_code=409, detail="La sugerencia ya fue procesada")
+
+    # Si la categoría ya existe (creada entre tanto), solo marcar aprobada.
+    existing = (
+        db.query(Category)
+        .filter(
+            Category.organization_id == organization_id,
+            func.lower(Category.name) == suggestion.suggested_name.lower(),
+        )
+        .first()
+    )
+    if existing:
+        suggestion.status = SuggestionStatus.approved
+        suggestion.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        suggestion.reviewed_by = current_user.id
+        db.commit()
+        return existing
+
+    total = (
+        db.query(Category)
+        .filter(Category.organization_id == organization_id)
+        .count()
+    )
+    if total >= 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Límite de 10 categorías por organización alcanzado",
+        )
+
+    category = Category(
+        organization_id=organization_id,
+        name=suggestion.suggested_name,
+        description="Categoría sugerida por la IA",
+    )
+    db.add(category)
+    suggestion.status = SuggestionStatus.approved
+    suggestion.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    suggestion.reviewed_by = current_user.id
+    db.commit()
+    db.refresh(category)
+
+    log_action(
+        db=db,
+        user_id=current_user.id,
+        action=AuditAction.category_create,
+        detail={
+            "category_id": str(category.id),
+            "name": category.name,
+            "source": "ai_suggestion",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    return category
+
+
+@router.post(
+    "/suggestions/{suggestion_id}/reject",
+    summary="Rechazar sugerencia de categoría",
+)
+async def reject_category_suggestion(
+    suggestion_id: UUID,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    suggestion = (
+        db.query(CategorySuggestion)
+        .filter(
+            CategorySuggestion.id == suggestion_id,
+            CategorySuggestion.organization_id == organization_id,
+        )
+        .first()
+    )
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Sugerencia no encontrada")
+    if suggestion.status != SuggestionStatus.pending:
+        raise HTTPException(status_code=409, detail="La sugerencia ya fue procesada")
+
+    suggestion.status = SuggestionStatus.rejected
+    suggestion.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    suggestion.reviewed_by = current_user.id
+    db.commit()
+    return {"detail": "Sugerencia rechazada"}
 
 
 @router.put("/{category_id}", response_model=CategoryResponse, summary="Editar categoría")
