@@ -107,15 +107,16 @@ def test_pipeline_classified(db: Session, admin_user, test_category: Category):
     )
 
     with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
-         patch("app.services.pipeline_service.nlp_service.classify_document") as mock_nlp, \
+         patch("app.services.pipeline_service.gemini_service.classify_or_suggest",
+               return_value={"category": test_category.name, "confidence": 0.92, "new_category": None}), \
          patch("app.services.pipeline_service.gemini_service.summarize_document", return_value="Resumen de prueba."), \
          patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"fake-docx"), \
          patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="path/to.docx"), \
+         patch("app.services.pipeline_service.ocr_service.build_searchable_pdf", return_value=None), \
          patch("app.services.pipeline_service.alert_service.detect_expiry_dates", return_value=[]), \
          patch("app.services.pipeline_service.risk_service.evaluate_risk", return_value="low"):
 
         mock_ocr.return_value = _OCR_TEXT
-        mock_nlp.return_value = (test_category.name, 0.92)
 
         process_document(doc_id, db)
 
@@ -159,15 +160,16 @@ def test_pipeline_review_bajo_score(db: Session, admin_user, test_category: Cate
     )
 
     with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
-         patch("app.services.pipeline_service.nlp_service.classify_document") as mock_nlp, \
+         patch("app.services.pipeline_service.gemini_service.classify_or_suggest",
+               return_value={"category": test_category.name, "confidence": 0.25, "new_category": None}), \
          patch("app.services.pipeline_service.gemini_service.summarize_document", return_value="Resumen."), \
          patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"fake-docx"), \
          patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="path/to.docx"), \
+         patch("app.services.pipeline_service.ocr_service.build_searchable_pdf", return_value=None), \
          patch("app.services.pipeline_service.alert_service.detect_expiry_dates", return_value=[]), \
          patch("app.services.pipeline_service.risk_service.evaluate_risk", return_value="medium"):
 
         mock_ocr.return_value = _OCR_TEXT_LOW
-        mock_nlp.return_value = (test_category.name, 0.25)
 
         process_document(doc_id, db)
 

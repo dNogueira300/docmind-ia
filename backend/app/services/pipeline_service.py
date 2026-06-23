@@ -14,19 +14,25 @@ from app.services import alert_service, risk_service, gemini_service
 logger = logging.getLogger("docmind")
 
 
-def _maybe_suggest_category(
-    db: Session, doc: Document, ocr_text: str, existing_names: list[str]
+def _persist_suggestion(
+    db: Session, doc: Document, name: str, confidence: float
 ) -> None:
-    """Si el documento no encaja en las categorías existentes, pide a Gemini una
-    categoría nueva y la guarda como sugerencia PENDIENTE (no la crea sola)."""
-    suggestion = gemini_service.suggest_category(
-        ocr_text, existing_names, doc_name=doc.original_filename
-    )
-    if not suggestion:
+    """Guarda una sugerencia de categoría PENDIENTE (sin duplicar pendientes)."""
+    if not name or not name.strip():
         return
-    name, conf = suggestion
+    name = name.strip()
 
-    # Dedupe: ya existe una sugerencia PENDIENTE con ese nombre en la organización.
+    # Dedupe: ya existe una categoría con ese nombre, o una sugerencia pendiente.
+    exists_cat = (
+        db.query(Category)
+        .filter(
+            Category.organization_id == doc.organization_id,
+            func.lower(Category.name) == name.lower(),
+        )
+        .first()
+    )
+    if exists_cat:
+        return
     already = (
         db.query(CategorySuggestion)
         .filter(
@@ -44,7 +50,7 @@ def _maybe_suggest_category(
             organization_id=doc.organization_id,
             document_id=doc.id,
             suggested_name=name,
-            confidence=conf,
+            confidence=confidence,
         )
     )
     db.commit()
@@ -171,7 +177,11 @@ def process_document(document_id: str, db: Session) -> None:
             db.commit()
             # Sin categorías aún: proponer una a partir del documento.
             try:
-                _maybe_suggest_category(db, doc, ocr_text, [])
+                result = gemini_service.classify_or_suggest(
+                    ocr_text, [], doc_name=doc.original_filename
+                )
+                if result and result["new_category"]:
+                    _persist_suggestion(db, doc, result["new_category"], result["confidence"])
             except Exception as sug_exc:
                 logger.error(
                     f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
@@ -179,45 +189,50 @@ def process_document(document_id: str, db: Session) -> None:
                 )
             return
 
-        # Clasificación con Gemini (primario); heurística/zero-shot como fallback
-        # si Gemini no está disponible o falla.
-        gemini_result = gemini_service.classify_document(
+        # ── Clasificación: Gemini decide si encaja o sugiere categoría nueva ──
+        result = gemini_service.classify_or_suggest(
             ocr_text, category_names, doc_name=doc.original_filename
         )
-        if gemini_result is not None:
-            predicted_name, score = gemini_result
-        else:
+
+        if result is None:
+            # Fallback: Gemini no disponible → heurística/zero-shot.
             predicted_name, score = nlp_service.classify_document(
                 ocr_text, category_names
             )
-        matched = next((c for c in categories if c.name == predicted_name), None)
-
-        if matched is None:
-            matched = categories[0]
-            score = 0.0
-            logger.warning(f"Pipeline: etiqueta NLP no coincide → fallback '{matched.name}'")
-
-        doc.category_id = matched.id
-        doc.ai_confidence_score = score
-
-        if score < CONFIDENCE_THRESHOLD:
-            doc.status = DocStatus.review
-            logger.info(f"Pipeline: score bajo ({score:.2f}) → review. Doc={document_id}")
+            matched = next((c for c in categories if c.name == predicted_name), None) or categories[0]
+            doc.category_id = matched.id
+            doc.ai_confidence_score = score
+            doc.status = DocStatus.classified if score >= CONFIDENCE_THRESHOLD else DocStatus.review
+        elif result["category"]:
+            # Encaja en una categoría existente.
+            matched = next(c for c in categories if c.name == result["category"])
+            score = result["confidence"]
+            doc.category_id = matched.id
+            doc.ai_confidence_score = score
+            doc.status = DocStatus.classified if score >= CONFIDENCE_THRESHOLD else DocStatus.review
+            logger.info(
+                f"Pipeline: clasificado '{matched.name}' (score={score:.2f}) doc={document_id}"
+            )
         else:
-            doc.status = DocStatus.classified
-
-        doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        db.commit()
-
-        # ── 5b: Sugerencia de categoría nueva si ninguna encajó bien ──────────
-        if score < CONFIDENCE_THRESHOLD:
+            # NO encaja en ninguna → no forzar: sin categoría, review + sugerencia.
+            doc.category_id = None
+            doc.ai_confidence_score = result["confidence"]
+            doc.status = DocStatus.review
+            logger.info(
+                f"Pipeline: no encaja en categorías existentes → review + sugerencia "
+                f"'{result['new_category']}' doc={document_id}"
+            )
             try:
-                _maybe_suggest_category(db, doc, ocr_text, category_names)
+                if result["new_category"]:
+                    _persist_suggestion(db, doc, result["new_category"], result["confidence"])
             except Exception as sug_exc:
                 logger.error(
                     f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
                     exc_info=True,
                 )
+
+        doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
 
         # ── 6: Alertas de vencimiento ─────────────────────────────────────────
         try:

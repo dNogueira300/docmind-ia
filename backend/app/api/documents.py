@@ -119,6 +119,7 @@ async def list_documents(
             "risk_level": d.risk_level,
             "status": d.status,
             "has_digitalized": bool(d.digitalized_path),
+            "has_ocr_pdf": bool(d.ocr_pdf_path),
             "created_at": d.created_at,
             "updated_at": d.updated_at,
         }

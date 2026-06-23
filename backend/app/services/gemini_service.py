@@ -185,6 +185,82 @@ def _extract_json(raw: str) -> Optional[dict]:
         return None
 
 
+_CLASSIFY_SUGGEST_PROMPT = """\
+Eres un clasificador de documentos administrativos y legales peruanos.
+Categorías existentes en el sistema:
+{categories}
+
+Analiza el TIPO de documento y decide:
+- Si su tipo corresponde CLARAMENTE a una de las categorías existentes, devuélvela
+  en "categoria" (copia literal de la lista) con una confianza alta.
+- Si su tipo NO corresponde a ninguna —aunque tenga relación temática— NO lo fuerces:
+  deja "categoria" en null y propón en "categoria_nueva" un nombre corto para el tipo
+  de documento (1-3 palabras, en plural natural: "Facturas", "Cartas de aceptación").
+
+Ejemplos:
+- Una factura y NO existe categoría de facturas → {{"categoria": null, "confianza": 0.0, "categoria_nueva": "Facturas"}}
+- Un contrato y existe "Contratos" → {{"categoria": "Contratos", "confianza": 0.9, "categoria_nueva": null}}
+
+Responde SOLO con JSON válido, sin markdown ni texto adicional:
+{{"categoria": "<nombre exacto de la lista o null>", "confianza": <0.0-1.0>, "categoria_nueva": "<nombre o null>"}}
+
+DOCUMENTO ("{doc_name}"):
+{text}
+"""
+
+
+def classify_or_suggest(
+    text: str, categories: list[str], doc_name: str = ""
+) -> Optional[dict]:
+    """
+    Decide en una sola llamada si el documento encaja en una categoría existente o
+    amerita una nueva.
+
+    Returns:
+        dict {"category": str|None, "confidence": float, "new_category": str|None}
+        - category: nombre EXACTO de una categoría existente, o None si no encaja.
+        - new_category: nombre propuesto para una categoría nueva (si no encaja), o None.
+        None si Gemini no está disponible o falla → el caller aplica su fallback.
+    """
+    if not _is_available() or not text or not text.strip():
+        return None
+    try:
+        client = _get_client()
+        prompt = _CLASSIFY_SUGGEST_PROMPT.format(
+            categories="\n".join(f"- {c}" for c in categories) or "(ninguna)",
+            doc_name=doc_name or "desconocido",
+            text=text[:4000],
+        )
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        data = _extract_json(response.text or "")
+        if not data:
+            return None
+
+        raw_cat = data.get("categoria")
+        match = None
+        if raw_cat:
+            match = next(
+                (c for c in categories if c.lower() == str(raw_cat).strip().lower()),
+                None,
+            )
+        conf = max(0.0, min(1.0, float(data.get("confianza", 0.0))))
+
+        raw_new = data.get("categoria_nueva")
+        new_cat = str(raw_new).strip() if raw_new else None
+        # No proponer algo que ya existe.
+        if new_cat and any(new_cat.lower() == c.lower() for c in categories):
+            new_cat = None
+
+        logger.info(
+            f"Gemini clasificación: categoria={match!r} conf={conf:.2f} "
+            f"nueva={new_cat!r}"
+        )
+        return {"category": match, "confidence": conf, "new_category": new_cat}
+    except Exception as exc:
+        logger.warning(f"Error en Gemini classify_or_suggest: {exc}")
+        return None
+
+
 def classify_document(
     text: str, categories: list[str], doc_name: str = ""
 ) -> Optional[tuple[str, float]]:

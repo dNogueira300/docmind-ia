@@ -23,21 +23,33 @@ export default function SearchPage() {
     getCategories().then(setCategories).catch(console.error)
   }, [])
 
-  const handleSearch = async (e) => {
-    e.preventDefault()
-    if (!query.trim()) return
+  // Búsqueda en vivo (debounce). Al borrar todo el texto, se limpia el resultado.
+  useEffect(() => {
+    const term = query.trim()
+    if (!term) {
+      setResults([])
+      setSearched(false)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setSearched(true)
-    try {
-      const data = await searchDocuments(query.trim(), 0, 20, semantic)
-      setResults(data)
-    } catch (err) {
-      console.error(err)
-      setResults([])
-    } finally {
-      setLoading(false)
-    }
-  }
+    const timer = setTimeout(async () => {
+      try {
+        const data = await searchDocuments(term, 0, 20, semantic)
+        setResults(data)
+      } catch (err) {
+        console.error(err)
+        setResults([])
+      } finally {
+        setLoading(false)
+      }
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [query, semantic])
+
+  // El submit del formulario ya no es necesario (la búsqueda es en vivo).
+  const handleSearch = (e) => e.preventDefault()
 
   return (
     <Layout title="Búsqueda inteligente">
