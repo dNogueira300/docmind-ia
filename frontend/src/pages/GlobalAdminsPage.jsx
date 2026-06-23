@@ -17,13 +17,7 @@ import {
 } from '../services/api/users'
 import { listOrganizations } from '../services/api/organizations'
 import { useToast } from '../context/ToastContext'
-
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-PE', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
+import { formatDate } from '../utils/datetime'
 
 const EMPTY_CREATE = { organization_id: '', name: '', email: '', password: '', confirm: '' }
 const EMPTY_EDIT   = { name: '', email: '' }

@@ -8,6 +8,7 @@ import Button from "../components/UI/Button";
 import { getAuditLog } from "../services/api/audit";
 import { getUsers } from "../services/api/users";
 import { useAuth } from "../context/AuthContext";
+import { formatDateTime } from "../utils/datetime";
 
 const LIMIT = 25;
 
@@ -26,18 +27,6 @@ const ACTION_OPTIONS = [
   { value: "user_activate", label: "Admin reactivado" },
 ];
 
-function formatDateTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function truncateId(id) {
   if (!id) return "—";

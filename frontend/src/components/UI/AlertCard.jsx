@@ -1,21 +1,7 @@
 import { Bell, X, FileText } from 'lucide-react'
 import { dismissAlert } from '../../services/api/alerts'
 import { useToast } from '../../context/ToastContext'
-
-function daysUntil(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((d - today) / (1000 * 60 * 60 * 24))
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('es-PE', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
+import { formatDate, daysUntilDate as daysUntil } from '../../utils/datetime'
 
 const TYPE_LABELS = { expiry: 'Vencimiento', deadline: 'Plazo límite', renewal: 'Renovación' }
 

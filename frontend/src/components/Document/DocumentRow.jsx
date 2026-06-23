@@ -2,6 +2,7 @@ import { Image, MoreVertical, Download, Eye, RefreshCw, Trash2, RotateCcw } from
 import Badge from '../UI/Badge'
 import ActionMenu from '../UI/ActionMenu'
 import { useAuth } from '../../context/AuthContext'
+import { formatDate } from '../../utils/datetime'
 
 function FileIcon({ type }) {
   const base = 'w-8 h-8 rounded-[var(--radius-md)] flex items-center justify-center shrink-0 text-[10px] font-semibold'
@@ -25,10 +26,6 @@ function FileIcon({ type }) {
   )
 }
 
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 function formatSize(kb) {
   if (!kb) return ''

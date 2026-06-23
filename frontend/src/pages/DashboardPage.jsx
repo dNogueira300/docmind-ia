@@ -14,11 +14,7 @@ import { getDocuments, getStatsByRisk } from '../services/api/documents'
 import { getCategories } from '../services/api/categories'
 import { getAlerts } from '../services/api/alerts'
 import { useAuth } from '../context/AuthContext'
-
-function formatDate(iso) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
-}
+import { formatDate, parseApiDate } from '../utils/datetime'
 
 const RISK_ORDER = ['critical', 'high', 'medium', 'low']
 const RISK_COLORS = {
@@ -60,7 +56,7 @@ export default function DashboardPage() {
   const total      = docs.length
   const classified = docs.filter((d) => d.status === 'classified').length
   const pending    = docs.filter((d) => ['pending', 'review', 'pending_approval'].includes(d.status)).length
-  const recent     = [...docs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5)
+  const recent     = [...docs].sort((a, b) => parseApiDate(b.created_at) - parseApiDate(a.created_at)).slice(0, 5)
 
   const riskMap = Object.fromEntries(riskStats.map((r) => [r.risk_level, r.count]))
 
@@ -279,7 +275,7 @@ export default function DashboardPage() {
                       </div>
                       <Badge type="status" value={doc.status} />
                       <span className="text-xs shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                        {formatDate(doc.created_at)}
+                        {formatDate(doc.created_at, { day: '2-digit', month: 'short' })}
                       </span>
                     </div>
                   </li>

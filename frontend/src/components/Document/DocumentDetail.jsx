@@ -15,6 +15,7 @@ import {
 import { getAlerts } from '../../services/api/alerts'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { formatDateTime as formatDate } from '../../utils/datetime'
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -27,14 +28,6 @@ function Field({ label, value, wide }) {
       <p className="text-sm" style={{ color: 'var(--color-text-primary)' }}>{value ?? '—'}</p>
     </div>
   )
-}
-
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-PE', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
 }
 
 function formatSize(kb) {
