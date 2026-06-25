@@ -23,7 +23,13 @@ export default function CategorySuggestionsBanner({ onChange }) {
     getCategorySuggestions('pending').then(setSuggestions).catch(console.error)
     getCategories().then((c) => setCatCount(c.length)).catch(console.error)
   }
-  useEffect(() => { load() }, [])
+  // Carga inicial + sondeo cada 6s para que las sugerencias nuevas aparezcan
+  // sin tener que refrescar la página (se crean en background tras subir un doc).
+  useEffect(() => {
+    load()
+    const timer = setInterval(load, 6000)
+    return () => clearInterval(timer)
+  }, [])
 
   const approve = async (s) => {
     setBusy(s.id)
@@ -79,6 +85,11 @@ export default function CategorySuggestionsBanner({ onChange }) {
               <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
                 {s.suggested_name}
               </p>
+              {s.document_name && (
+                <p className="text-[11px] text-[var(--color-text-muted)] truncate">
+                  Sugerida a partir de: {s.document_name}
+                </p>
+              )}
               {s.confidence != null && (
                 <p className="text-[11px] text-[var(--color-text-muted)]">
                   Confianza IA: {Math.round(s.confidence * 100)}%

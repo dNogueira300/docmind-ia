@@ -62,6 +62,7 @@ class CategorySuggestionResponse(BaseModel):
     id: UUID
     organization_id: UUID
     document_id: Optional[UUID] = None
+    document_name: Optional[str] = None  # nombre del documento que originó la sugerencia
     suggested_name: str
     confidence: Optional[float] = None
     status: str

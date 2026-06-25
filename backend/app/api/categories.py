@@ -15,7 +15,7 @@ from app.core.deps import (
 from app.models.user import User
 from app.models.category import Category
 from app.models.category_suggestion import CategorySuggestion, SuggestionStatus
-from app.models.document import Document
+from app.models.document import Document, DocStatus
 from app.models.audit_log import AuditAction
 from app.schemas.category import (
     CategoryCreate, CategoryUpdate, CategoryResponse, CategorySuggestionResponse,
@@ -117,14 +117,30 @@ async def list_category_suggestions(
     organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
     status_filter: str = "pending",
-) -> list[CategorySuggestion]:
-    """Lista las sugerencias de categorías (por defecto solo las pendientes)."""
-    query = db.query(CategorySuggestion).filter(
-        CategorySuggestion.organization_id == organization_id
+) -> list[dict]:
+    """Lista las sugerencias de categorías (por defecto solo las pendientes),
+    incluyendo el nombre del documento que originó cada una."""
+    query = (
+        db.query(CategorySuggestion, Document.original_filename)
+        .outerjoin(Document, Document.id == CategorySuggestion.document_id)
+        .filter(CategorySuggestion.organization_id == organization_id)
     )
     if status_filter:
         query = query.filter(CategorySuggestion.status == status_filter)
-    return query.order_by(CategorySuggestion.created_at.desc()).all()
+    rows = query.order_by(CategorySuggestion.created_at.desc()).all()
+    return [
+        {
+            "id": s.id,
+            "organization_id": s.organization_id,
+            "document_id": s.document_id,
+            "document_name": doc_name,
+            "suggested_name": s.suggested_name,
+            "confidence": s.confidence,
+            "status": s.status.value if hasattr(s.status, "value") else s.status,
+            "created_at": s.created_at,
+        }
+        for s, doc_name in rows
+    ]
 
 
 @router.post(
@@ -154,8 +170,8 @@ async def approve_category_suggestion(
     if suggestion.status != SuggestionStatus.pending:
         raise HTTPException(status_code=409, detail="La sugerencia ya fue procesada")
 
-    # Si la categoría ya existe (creada entre tanto), solo marcar aprobada.
-    existing = (
+    # Categoría destino: la existente con ese nombre, o una nueva.
+    category = (
         db.query(Category)
         .filter(
             Category.organization_id == organization_id,
@@ -163,47 +179,63 @@ async def approve_category_suggestion(
         )
         .first()
     )
-    if existing:
-        suggestion.status = SuggestionStatus.approved
-        suggestion.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        suggestion.reviewed_by = current_user.id
-        db.commit()
-        return existing
-
-    total = (
-        db.query(Category)
-        .filter(Category.organization_id == organization_id)
-        .count()
-    )
-    if total >= 10:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Límite de 10 categorías por organización alcanzado",
+    created = False
+    if category is None:
+        total = (
+            db.query(Category)
+            .filter(Category.organization_id == organization_id)
+            .count()
         )
+        if total >= 10:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Límite de 10 categorías por organización alcanzado",
+            )
+        category = Category(
+            organization_id=organization_id,
+            name=suggestion.suggested_name,
+            description="Categoría sugerida por la IA",
+        )
+        db.add(category)
+        db.flush()  # asignar id sin cerrar la transacción
+        created = True
 
-    category = Category(
-        organization_id=organization_id,
-        name=suggestion.suggested_name,
-        description="Categoría sugerida por la IA",
-    )
-    db.add(category)
+    # Auto-clasificar el documento que originó la sugerencia: si sigue en review
+    # y sin categoría, queda clasificado en la categoría recién aprobada.
+    if suggestion.document_id:
+        src_doc = (
+            db.query(Document)
+            .filter(
+                Document.id == suggestion.document_id,
+                Document.organization_id == organization_id,
+            )
+            .first()
+        )
+        if src_doc and src_doc.category_id is None and src_doc.status == DocStatus.review:
+            src_doc.category_id = category.id
+            src_doc.status = DocStatus.classified
+            if src_doc.ai_confidence_score is None:
+                src_doc.ai_confidence_score = suggestion.confidence
+            src_doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
     suggestion.status = SuggestionStatus.approved
     suggestion.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     suggestion.reviewed_by = current_user.id
     db.commit()
     db.refresh(category)
 
-    log_action(
-        db=db,
-        user_id=current_user.id,
-        action=AuditAction.category_create,
-        detail={
-            "category_id": str(category.id),
-            "name": category.name,
-            "source": "ai_suggestion",
-        },
-        ip_address=request.client.host if request.client else None,
-    )
+    if created:
+        log_action(
+            db=db,
+            user_id=current_user.id,
+            action=AuditAction.category_create,
+            detail={
+                "category_id": str(category.id),
+                "name": category.name,
+                "source": "ai_suggestion",
+            },
+            ip_address=request.client.host if request.client else None,
+        )
     return category
 
 

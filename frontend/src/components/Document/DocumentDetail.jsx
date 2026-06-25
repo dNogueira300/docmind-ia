@@ -436,7 +436,7 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
                     )}
                     {hasOcrPdf && (
                       <Button variant="ghost" size="sm" loading={downloadingPdf} onClick={handleDownloadOcrPdf}>
-                        <Download size={13} /> Descargar PDF con OCR (editable)
+                        <Download size={13} /> Descargar PDF con OCR
                       </Button>
                     )}
                   </div>
