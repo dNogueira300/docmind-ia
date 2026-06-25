@@ -181,6 +181,8 @@ def process_document(document_id: str, db: Session) -> None:
                     ocr_text, [], doc_name=doc.original_filename
                 )
                 if result and result["new_category"]:
+                    doc.ai_suggested_category = result["new_category"]
+                    db.commit()
                     _persist_suggestion(db, doc, result["new_category"], result["confidence"])
             except Exception as sug_exc:
                 logger.error(
@@ -218,6 +220,9 @@ def process_document(document_id: str, db: Session) -> None:
             doc.category_id = None
             doc.ai_confidence_score = result["confidence"]
             doc.status = DocStatus.review
+            # Recordar la categoría propuesta por Gemini en el propio documento, para
+            # poder clasificarlo en lote al aprobar la sugerencia (sin re-llamar a IA).
+            doc.ai_suggested_category = result["new_category"]
             logger.info(
                 f"Pipeline: no encaja en categorías existentes → review + sugerencia "
                 f"'{result['new_category']}' doc={document_id}"

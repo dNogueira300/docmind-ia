@@ -1,4 +1,5 @@
 """CRUD de categorías — aisladas por tenant (multi-tenant)."""
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 from typing import Annotated
@@ -21,6 +22,8 @@ from app.schemas.category import (
     CategoryCreate, CategoryUpdate, CategoryResponse, CategorySuggestionResponse,
 )
 from app.services.audit_service import log_action
+
+logger = logging.getLogger("docmind")
 
 router = APIRouter(prefix="/categories", tags=["Categorías"])
 
@@ -200,23 +203,54 @@ async def approve_category_suggestion(
         db.flush()  # asignar id sin cerrar la transacción
         created = True
 
-    # Auto-clasificar el documento que originó la sugerencia: si sigue en review
-    # y sin categoría, queda clasificado en la categoría recién aprobada.
+    # Clasificación en lote SIN re-llamar a IA: todos los documentos en review que
+    # Gemini había marcado para esta categoría (ai_suggested_category) quedan
+    # clasificados de una sola vez. Reutiliza la decisión que Gemini ya tomó por
+    # cada documento al procesarlo.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    reclassified = (
+        db.query(Document)
+        .filter(
+            Document.organization_id == organization_id,
+            Document.status == DocStatus.review,
+            Document.category_id.is_(None),
+            func.lower(Document.ai_suggested_category) == suggestion.suggested_name.lower(),
+        )
+        .update(
+            {
+                Document.category_id: category.id,
+                Document.status: DocStatus.classified,
+                Document.ai_confidence_score: suggestion.confidence,
+                Document.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+    )
+
+    # Fallback: el documento que originó la sugerencia, si no tenía
+    # ai_suggested_category (p. ej. procesado antes de esta funcionalidad).
     if suggestion.document_id:
         src_doc = (
             db.query(Document)
             .filter(
                 Document.id == suggestion.document_id,
                 Document.organization_id == organization_id,
+                Document.category_id.is_(None),
+                Document.status == DocStatus.review,
             )
             .first()
         )
-        if src_doc and src_doc.category_id is None and src_doc.status == DocStatus.review:
+        if src_doc:
             src_doc.category_id = category.id
             src_doc.status = DocStatus.classified
             if src_doc.ai_confidence_score is None:
                 src_doc.ai_confidence_score = suggestion.confidence
-            src_doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            src_doc.updated_at = now
+
+    logger.info(
+        "Sugerencia '%s' aprobada → %d documento(s) clasificados en lote",
+        suggestion.suggested_name, reclassified,
+    )
 
     suggestion.status = SuggestionStatus.approved
     suggestion.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)

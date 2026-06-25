@@ -61,6 +61,9 @@ class Document(Base):
     ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Categoría que Gemini propuso si el doc no encajó en ninguna existente.
+    # Se usa para clasificar en lote al aprobar la sugerencia (sin re-llamar a IA).
+    ai_suggested_category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, server_default="'low'")
     status: Mapped[DocStatus] = mapped_column(
         SAEnum(DocStatus, name="doc_status", create_type=False),
