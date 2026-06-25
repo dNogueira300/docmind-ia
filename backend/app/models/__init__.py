@@ -10,6 +10,7 @@ from app.models.approval import DocumentApproval, ApprovalStatus
 from app.models.risk_rule import RiskRule, RiskLevel
 from app.models.category_suggestion import CategorySuggestion, SuggestionStatus
 from app.models.activation_code import ActivationCode
+from app.models.plan_pricing import PlanPricing
 
 __all__ = [
     "Base",
@@ -31,4 +32,5 @@ __all__ = [
     "CategorySuggestion",
     "SuggestionStatus",
     "ActivationCode",
+    "PlanPricing",
 ]

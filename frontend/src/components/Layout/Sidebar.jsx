@@ -35,6 +35,7 @@ const NAV_SUPER = [
   { to: "/admin/organizations", label: "Empresas", icon: Building2 },
   { to: "/admin/users", label: "Administradores", icon: Users },
   { to: "/admin/activation-codes", label: "Códigos de activación", icon: Sparkles },
+  { to: "/admin/pricing", label: "Precios", icon: Tag },
   { to: "/admin/audit", label: "Auditoría global", icon: ScrollText },
 ];
 

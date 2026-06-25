@@ -7,6 +7,8 @@ import { getOrganizationBySlug } from './services/api/organizations'
 import LoginPage from './pages/LoginPage'
 import PlanPage from './pages/PlanPage'
 import ActivationCodesPage from './pages/ActivationCodesPage'
+import PricingPage from './pages/PricingPage'
+import PricingAdminPage from './pages/PricingAdminPage'
 import DashboardPage from './pages/DashboardPage'
 import DocumentsPage from './pages/DocumentsPage'
 import UploadPage from './pages/UploadPage'
@@ -128,6 +130,9 @@ function AppRoutes() {
         element={isAuthenticated ? <Navigate to={homeForRole()} replace /> : <LoginPage />}
       />
 
+      {/* Página pública de precios (sin autenticación) */}
+      <Route path="/pricing" element={<PricingPage />} />
+
       {/* Root */}
       <Route path="/" element={<Navigate to={homeForRole()} replace />} />
 
@@ -147,6 +152,10 @@ function AppRoutes() {
       <Route
         path="/admin/activation-codes"
         element={<SuperAdminRoute><ActivationCodesPage /></SuperAdminRoute>}
+      />
+      <Route
+        path="/admin/pricing"
+        element={<SuperAdminRoute><PricingAdminPage /></SuperAdminRoute>}
       />
 
       {/* ── Rutas TENANT-SCOPED (bloqueadas para super_admin) ────────── */}

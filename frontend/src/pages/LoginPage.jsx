@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import {
   Eye, EyeOff, BrainCircuit, AlertCircle,
   FileSearch2, Sparkles, ShieldCheck, Building2,
@@ -307,6 +307,10 @@ export default function LoginPage() {
 
           {/* Footer */}
           <p className="mt-8 text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            <Link to="/pricing" className="font-medium" style={{ color: 'var(--color-primary)' }}>
+              Ver planes y precios
+            </Link>
+            <span className="mx-2">·</span>
             UNAP · Gestión de Servicios de TI 2026
           </p>
         </div>
