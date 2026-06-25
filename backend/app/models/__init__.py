@@ -11,6 +11,7 @@ from app.models.risk_rule import RiskRule, RiskLevel
 from app.models.category_suggestion import CategorySuggestion, SuggestionStatus
 from app.models.activation_code import ActivationCode
 from app.models.plan_pricing import PlanPricing
+from app.models.demo_request import DemoRequest
 
 __all__ = [
     "Base",
@@ -33,4 +34,5 @@ __all__ = [
     "SuggestionStatus",
     "ActivationCode",
     "PlanPricing",
+    "DemoRequest",
 ]

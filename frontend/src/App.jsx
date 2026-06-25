@@ -9,6 +9,7 @@ import PlanPage from './pages/PlanPage'
 import ActivationCodesPage from './pages/ActivationCodesPage'
 import PricingPage from './pages/PricingPage'
 import PricingAdminPage from './pages/PricingAdminPage'
+import DemoRequestsPage from './pages/DemoRequestsPage'
 import DashboardPage from './pages/DashboardPage'
 import DocumentsPage from './pages/DocumentsPage'
 import UploadPage from './pages/UploadPage'
@@ -156,6 +157,10 @@ function AppRoutes() {
       <Route
         path="/admin/pricing"
         element={<SuperAdminRoute><PricingAdminPage /></SuperAdminRoute>}
+      />
+      <Route
+        path="/admin/demo-requests"
+        element={<SuperAdminRoute><DemoRequestsPage /></SuperAdminRoute>}
       />
 
       {/* ── Rutas TENANT-SCOPED (bloqueadas para super_admin) ────────── */}

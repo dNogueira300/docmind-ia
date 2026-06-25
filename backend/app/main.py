@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.api import auth, users, categories, documents, audit_log, organizations, alerts, approvals, risk_rules, chat, pricing
+from app.api import auth, users, categories, documents, audit_log, organizations, alerts, approvals, risk_rules, chat, pricing, demo_requests
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -174,6 +174,7 @@ app.include_router(approvals.router, prefix=PREFIX)
 app.include_router(risk_rules.router, prefix=PREFIX)
 app.include_router(chat.router, prefix=PREFIX)
 app.include_router(pricing.router, prefix=PREFIX)
+app.include_router(demo_requests.router, prefix=PREFIX)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

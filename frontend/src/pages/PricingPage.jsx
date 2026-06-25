@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import LoadingSpinner from '../components/UI/LoadingSpinner'
 import ThemeToggle from '../components/UI/ThemeToggle'
+import DemoRequestModal from '../components/UI/DemoRequestModal'
 import { getPricing } from '../services/api/pricing'
 
 /* ── Identidad: logo del sistema (mismo ícono del login) ──────────────────── */
@@ -72,7 +73,7 @@ function Bullet({ on, children }) {
   )
 }
 
-function PlanCard({ p }) {
+function PlanCard({ p, onRequest }) {
   const highlight = p.highlight
   return (
     <div
@@ -116,8 +117,8 @@ function PlanCard({ p }) {
         ))}
       </ul>
       <div className="mt-auto pt-2">
-        <Link
-          to="/login"
+        <button
+          onClick={() => onRequest(p.plan)}
           className="flex items-center justify-center gap-1.5 w-full py-2.5 rounded-[var(--radius-md)] text-sm font-medium transition-colors"
           style={{
             backgroundColor: highlight ? 'var(--color-primary)' : 'var(--color-bg-surface-2)',
@@ -126,7 +127,7 @@ function PlanCard({ p }) {
         >
           {p.custom_quote ? 'Contactar ventas' : Number(p.price) === 0 ? 'Comenzar gratis' : `Activar ${p.label}`}
           <ArrowRight size={15} />
-        </Link>
+        </button>
       </div>
     </div>
   )
@@ -136,6 +137,7 @@ function PlanCard({ p }) {
 export default function PricingPage() {
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
+  const [demoPlan, setDemoPlan] = useState(null)  // plan solicitado (abre el modal)
 
   useEffect(() => {
     getPricing().then(setPlans).catch(console.error).finally(() => setLoading(false))
@@ -173,9 +175,9 @@ export default function PricingPage() {
           artificial. Encuentra cualquier documento en segundos y nunca pierdas un vencimiento.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
-          <Link to="/login" className="flex items-center gap-1.5 px-5 py-3 rounded-[var(--radius-md)] text-sm font-medium" style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
+          <button onClick={() => setDemoPlan('free')} className="flex items-center gap-1.5 px-5 py-3 rounded-[var(--radius-md)] text-sm font-medium" style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
             Comenzar gratis <ArrowRight size={16} />
-          </Link>
+          </button>
           <a href="#planes" className="px-5 py-3 rounded-[var(--radius-md)] text-sm font-medium border" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}>
             Ver planes
           </a>
@@ -238,7 +240,7 @@ export default function PricingPage() {
           <div className="flex justify-center py-16"><LoadingSpinner /></div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
-            {plans.map((p) => <PlanCard key={p.plan} p={p} />)}
+            {plans.map((p) => <PlanCard key={p.plan} p={p} onRequest={setDemoPlan} />)}
           </div>
         )}
         <p className="text-center text-xs text-[var(--color-text-muted)] mt-8">
@@ -258,6 +260,9 @@ export default function PricingPage() {
           </p>
         </div>
       </footer>
+
+      {/* Modal de solicitud de acceso/demo */}
+      <DemoRequestModal plan={demoPlan} onClose={() => setDemoPlan(null)} />
     </div>
   )
 }

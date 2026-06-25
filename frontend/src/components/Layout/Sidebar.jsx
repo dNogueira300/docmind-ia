@@ -11,6 +11,7 @@ import {
   Building2,
   ShieldAlert,
   Sparkles,
+  Inbox,
 } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../context/AuthContext";
@@ -36,6 +37,7 @@ const NAV_SUPER = [
   { to: "/admin/users", label: "Administradores", icon: Users },
   { to: "/admin/activation-codes", label: "Códigos de activación", icon: Sparkles },
   { to: "/admin/pricing", label: "Precios", icon: Tag },
+  { to: "/admin/demo-requests", label: "Solicitudes", icon: Inbox },
   { to: "/admin/audit", label: "Auditoría global", icon: ScrollText },
 ];
 
