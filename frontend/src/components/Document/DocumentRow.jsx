@@ -41,7 +41,6 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
   const { isAdmin, isEditor } = useAuth()
 
   const category = categories.find((c) => c.id === doc.category_id)
-  const score    = doc.ai_confidence_score
   const canReclassify = isEditor && doc.status !== 'pending' && doc.status !== 'processing'
   const canReprocess  = isEditor && (doc.status === 'review' || doc.status === 'error')
 
@@ -131,25 +130,13 @@ export default function DocumentRow({ doc, categories = [], onView, onDownload, 
         )}
       </td>
 
-      {/* Score IA + Riesgo */}
+      {/* Riesgo */}
       <td className="px-4 py-3">
-        <div className="flex flex-col gap-1">
-          {score != null ? (
-            <span
-              className="text-xs font-medium tabular-nums"
-              style={{
-                color: score >= 0.70 ? 'var(--color-success)' : 'var(--color-warning)',
-              }}
-            >
-              {(score * 100).toFixed(0)}%
-            </span>
-          ) : (
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>
-          )}
-          {doc.risk_level && doc.risk_level !== 'low' && (
-            <Badge type="risk" value={doc.risk_level} />
-          )}
-        </div>
+        {doc.risk_level && doc.risk_level !== 'low' ? (
+          <Badge type="risk" value={doc.risk_level} />
+        ) : (
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>
+        )}
       </td>
 
       {/* Subido por */}

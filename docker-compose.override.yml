@@ -1,0 +1,12 @@
+# Override SOLO para desarrollo local.
+# Docker Compose lo combina automáticamente con docker-compose.yml.
+#
+# Motivo: el Dockerfile del frontend es de PRODUCCIÓN (compila con Vite y sirve
+# estático con `serve` en el puerto 4173, pensado para Railway). En local eso no
+# calza con el mapeo 5173:5173 y rompe el hot-reload. Aquí reemplazamos el comando
+# por el servidor de desarrollo de Vite, que escucha en 5173 y recarga al editar.
+#
+# No afecta a Railway (los override files no se usan en el despliegue).
+services:
+  frontend:
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"

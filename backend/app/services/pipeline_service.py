@@ -256,9 +256,10 @@ def process_document(document_id: str, db: Session) -> None:
         except Exception as risk_exc:
             logger.error(f"Pipeline: error en riesgo para doc={document_id}: {risk_exc}", exc_info=True)
 
+        category_label = doc.category.name if doc.category_id and doc.category else "sin categoría"
         logger.info(
             f"Pipeline completado: doc={document_id} status={doc.status.value} "
-            f"score={doc.ai_confidence_score} category='{matched.name}' risk={doc.risk_level}"
+            f"score={doc.ai_confidence_score} category='{category_label}' risk={doc.risk_level}"
         )
 
     except Exception as exc:

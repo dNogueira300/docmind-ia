@@ -10,6 +10,7 @@ import Modal from '../components/UI/Modal'
 import Button from '../components/UI/Button'
 import LoadingSpinner from '../components/UI/LoadingSpinner'
 import EmptyState from '../components/UI/EmptyState'
+import CategorySuggestionsBanner from '../components/UI/CategorySuggestionsBanner'
 import {
   getDocuments,
   searchDocuments,
@@ -148,6 +149,19 @@ export default function DocumentsPage() {
 
   return (
     <Layout title="Documentos">
+      {/* Sugerencias de categorías de la IA (solo admin) */}
+      {isAdmin && (
+        <div className="mb-3">
+          <CategorySuggestionsBanner
+            onChange={() => {
+              getCategories().then(setCategories).catch(console.error)
+              refreshStats()
+              fetchDocs()
+            }}
+          />
+        </div>
+      )}
+
       {/* Cards de filtro por categoría */}
       {categoryStats.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-none">
@@ -287,7 +301,7 @@ export default function DocumentsPage() {
             <table className="w-full min-w-[640px] text-left">
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-surface-2)]">
-                  {['Documento', 'Estado', 'Categoría', 'Score IA', 'Subido por', 'Fecha', ''].map((h) => (
+                  {['Documento', 'Estado', 'Categoría', 'Riesgo', 'Subido por', 'Fecha', ''].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
                       {h}
                     </th>
