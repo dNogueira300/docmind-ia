@@ -13,18 +13,29 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, get_active_organization_id
+from app.core.deps import get_current_user, get_active_organization_id, require_feature
 from app.models.user import User
+from app.models.organization import Organization
 from app.models.document import Document
 from app.models.category import Category
 from app.models.alert import DocumentAlert, AlertStatus
 from app.models.risk_rule import RiskRule
 
-from app.services import gemini_service
+from app.services import gemini_service, plan_service
 
 router = APIRouter(prefix="/chat", tags=["Chatbot"])
 
 AnyRole = Annotated[User, Depends(get_current_user)]
+# Exige que el plan incluya el chatbot y retorna la Organization.
+ChatbotOrg = Annotated[Organization, Depends(require_feature("chatbot"))]
+
+
+def _spend_ai_credit_or_402(db: Session, org: Organization) -> None:
+    if not plan_service.consume_ai_credit(db, org):
+        raise HTTPException(
+            status_code=402,
+            detail="Sin créditos de IA disponibles este mes. Mejora tu plan o espera al reinicio.",
+        )
 
 
 class ChatRequest(BaseModel):
@@ -47,12 +58,14 @@ class ChatResponse(BaseModel):
 async def global_chat(
     body: ChatRequest,
     current_user: AnyRole,
+    org: ChatbotOrg,
     organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> dict:
     """Reúne estadísticas de la organización y responde preguntas sobre el sistema."""
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
+    _spend_ai_credit_or_402(db, org)
 
     # Estadísticas del sistema
     total_docs = db.query(func.count(Document.id)).filter(
@@ -248,12 +261,14 @@ async def chat_with_document(
     document_id: UUID,
     body: ChatRequest,
     current_user: AnyRole,
+    org: ChatbotOrg,
     organization_id: UUID = Depends(get_active_organization_id),
     db: Session = Depends(get_db),
 ) -> dict:
     """Responde preguntas sobre el contenido OCR de un documento."""
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
+    _spend_ai_credit_or_402(db, org)
 
     doc = (
         db.query(Document)

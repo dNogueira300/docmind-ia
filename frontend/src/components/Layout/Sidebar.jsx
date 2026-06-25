@@ -10,6 +10,7 @@ import {
   BrainCircuit,
   Building2,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../context/AuthContext";
@@ -27,11 +28,13 @@ const NAV_ADMIN = [
   { path: "users", label: "Usuarios", icon: Users },
   { path: "risk-rules", label: "Reglas de Riesgo", icon: ShieldAlert },
   { path: "audit", label: "Auditoría", icon: ScrollText },
+  { path: "plan", label: "Plan", icon: Sparkles },
 ];
 // Links exclusivos super_admin (rutas globales /admin/*)
 const NAV_SUPER = [
   { to: "/admin/organizations", label: "Empresas", icon: Building2 },
   { to: "/admin/users", label: "Administradores", icon: Users },
+  { to: "/admin/activation-codes", label: "Códigos de activación", icon: Sparkles },
   { to: "/admin/audit", label: "Auditoría global", icon: ScrollText },
 ];
 

@@ -14,6 +14,7 @@ import {
 } from '../../services/api/documents'
 import { getAlerts } from '../../services/api/alerts'
 import { useAuth } from '../../context/AuthContext'
+import { usePlan } from '../../context/PlanContext'
 import { useToast } from '../../context/ToastContext'
 import { formatDateTime as formatDate } from '../../utils/datetime'
 
@@ -82,7 +83,10 @@ const RIGHT_TABS = [
 
 export default function DocumentDetail({ doc: initialDoc, categories = [], onClose, onUpdated }) {
   const { isEditor } = useAuth()
+  const { hasFeature } = usePlan()
   const toast        = useToast()
+  // Oculta la pestaña del chatbot si el plan no lo incluye.
+  const rightTabs = RIGHT_TABS.filter((t) => t.id !== 'chat' || hasFeature('chatbot'))
 
   const [doc,            setDoc]            = useState(initialDoc)
   const [previewUrl,     setPreviewUrl]     = useState(null)
@@ -297,7 +301,7 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
               className="flex border-b shrink-0"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg-surface-2)' }}
             >
-              {RIGHT_TABS.map(({ id, label, Icon }) => (
+              {rightTabs.map(({ id, label, Icon }) => (
                 <button
                   key={id}
                   onClick={() => setRightTab(id)}

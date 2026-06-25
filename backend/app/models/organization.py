@@ -3,7 +3,9 @@ from datetime import datetime
 from uuid import UUID
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Boolean, DateTime, text
+from typing import Optional
+
+from sqlalchemy import String, Boolean, Integer, DateTime, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -26,6 +28,22 @@ class Organization(Base):
     # Si está en False, los usuarios de esta org no pueden iniciar sesión.
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
+    )
+    # ── Plan SaaS ────────────────────────────────────────────────────────────
+    plan: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="'free'"
+    )
+    # Fecha en que vence el plan de pago. NULL = sin vencimiento (free o vitalicio).
+    plan_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    # Créditos de IA consumidos en el periodo mensual vigente.
+    ai_credits_used: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    # Cuándo se reinicia el contador mensual de créditos de IA.
+    ai_credits_reset_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("NOW()")

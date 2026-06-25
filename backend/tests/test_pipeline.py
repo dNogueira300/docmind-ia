@@ -181,6 +181,68 @@ def test_pipeline_review_bajo_score(db: Session, admin_user, test_category: Cate
     db.commit()
 
 
+def test_pipeline_free_plan_clasifica_por_codigo(db: Session, admin_user, test_category: Category):
+    """
+    En plan free NO se llama a Gemini, pero SÍ se clasifica por código (heurística
+    de keywords). El documento debe quedar clasificado sin usar IA.
+    """
+    from app.services.pipeline_service import process_document
+    from app.models.organization import Organization
+
+    db.rollback()
+    org = db.query(Organization).filter(Organization.id == ORG_ID).first()
+    original_plan = org.plan
+    org.plan = "free"
+    db.commit()
+
+    doc = Document(
+        id=uuid.uuid4(),
+        organization_id=ORG_ID,
+        uploaded_by=admin_user.id,
+        original_filename="contrato_free.pdf",
+        stored_path=f"{ORG_ID}/2026/04/contrato_free.pdf",
+        file_type="pdf",
+        file_size_kb=5,
+        status=DocStatus.pending,
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(doc)
+    db.commit()
+    doc_id = str(doc.id)
+
+    _OCR = (
+        "Contrato de prestación de servicios profesionales suscrito entre las partes "
+        "contratantes con fecha 01 de junio de 2026 para la provisión de materiales y "
+        "equipos según los términos y condiciones acordados por ambas instituciones."
+    )
+
+    try:
+        with patch("app.services.pipeline_service.ocr_service.extract_text", return_value=_OCR), \
+             patch("app.services.pipeline_service.gemini_service.classify_or_suggest") as mock_gemini, \
+             patch("app.services.pipeline_service.gemini_service.summarize_document") as mock_summary, \
+             patch("app.services.pipeline_service.nlp_service.classify_by_keywords",
+                   return_value=(test_category.name, 0.8)), \
+             patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"x"), \
+             patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="p.docx"), \
+             patch("app.services.pipeline_service.ocr_service.build_searchable_pdf", return_value=None), \
+             patch("app.services.pipeline_service.risk_service.evaluate_risk", return_value="low"):
+
+            process_document(doc_id, db)
+
+        db.refresh(doc)
+        assert doc.status == DocStatus.classified
+        assert doc.category_id == test_category.id
+        # Plan free → NO se usó Gemini (ni clasificación ni resumen)
+        mock_gemini.assert_not_called()
+        mock_summary.assert_not_called()
+    finally:
+        org.plan = original_plan
+        db.commit()
+        db.delete(doc)
+        db.commit()
+
+
 def test_pipeline_error_ocr(db: Session, admin_user):
     """
     Verifica que si OCR lanza una excepción, el documento queda en status='error'.

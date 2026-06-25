@@ -9,8 +9,10 @@ import { searchDocuments } from '../services/api/documents'
 import { getCategories } from '../services/api/categories'
 import { useEffect } from 'react'
 import Snippet from '../components/UI/Snippet'
+import { usePlan } from '../context/PlanContext'
 
 export default function SearchPage() {
+  const { hasFeature } = usePlan()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [categories, setCategories] = useState([])
@@ -75,16 +77,18 @@ export default function SearchPage() {
           </button>
         </form>
 
-        {/* Toggle de búsqueda semántica con Gemini */}
-        <label className="flex items-center gap-2 text-xs cursor-pointer -mt-3 text-[var(--color-text-muted)]">
-          <input
-            type="checkbox"
-            checked={semantic}
-            onChange={(e) => setSemantic(e.target.checked)}
-            className="accent-[var(--color-ai-accent)]"
-          />
-          Búsqueda semántica con IA (Gemini) — reordena por relevancia de significado
-        </label>
+        {/* Toggle de búsqueda semántica con Gemini (solo si el plan lo incluye) */}
+        {hasFeature('semantic_search') && (
+          <label className="flex items-center gap-2 text-xs cursor-pointer -mt-3 text-[var(--color-text-muted)]">
+            <input
+              type="checkbox"
+              checked={semantic}
+              onChange={(e) => setSemantic(e.target.checked)}
+              className="accent-[var(--color-ai-accent)]"
+            />
+            Búsqueda semántica con IA (Gemini) — reordena por relevancia de significado
+          </label>
+        )}
 
         {/* Resultados */}
         {loading ? (

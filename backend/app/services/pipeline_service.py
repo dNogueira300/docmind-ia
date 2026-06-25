@@ -111,11 +111,19 @@ def process_document(document_id: str, db: Session) -> None:
             db.commit()
             return
 
-        # ── 3: Resumen automático con Gemini ─────────────────────────────────
-        doc.ai_summary = gemini_service.summarize_document(
-            ocr_text, doc_name=doc.original_filename
-        )
-        db.commit()
+        # ── Plan SaaS: qué features de IA están habilitadas para esta org ─────
+        from app.services import plan_service  # noqa: PLC0415
+        org = plan_service.get_org(db, doc.organization_id)
+        ai_summary_ok = bool(org and plan_service.has_feature(org, "ai_summary"))
+        ai_classify_ok = bool(org and plan_service.has_feature(org, "ai_classification"))
+        ai_suggest_ok = bool(org and plan_service.has_feature(org, "ai_suggestions"))
+
+        # ── 3: Resumen automático con Gemini (gated por plan + créditos) ──────
+        if ai_summary_ok and plan_service.consume_ai_credit(db, org):
+            doc.ai_summary = gemini_service.summarize_document(
+                ocr_text, doc_name=doc.original_filename
+            )
+            db.commit()
 
         # ── 4: Generación del .docx ───────────────────────────────────────────
         try:
@@ -175,15 +183,16 @@ def process_document(document_id: str, db: Session) -> None:
             doc.status = DocStatus.review
             doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
-            # Sin categorías aún: proponer una a partir del documento.
+            # Sin categorías aún: proponer una a partir del documento (gated).
             try:
-                result = gemini_service.classify_or_suggest(
-                    ocr_text, [], doc_name=doc.original_filename
-                )
-                if result and result["new_category"]:
-                    doc.ai_suggested_category = result["new_category"]
-                    db.commit()
-                    _persist_suggestion(db, doc, result["new_category"], result["confidence"])
+                if ai_suggest_ok and plan_service.consume_ai_credit(db, org):
+                    result = gemini_service.classify_or_suggest(
+                        ocr_text, [], doc_name=doc.original_filename
+                    )
+                    if result and result["new_category"]:
+                        doc.ai_suggested_category = result["new_category"]
+                        db.commit()
+                        _persist_suggestion(db, doc, result["new_category"], result["confidence"])
             except Exception as sug_exc:
                 logger.error(
                     f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
@@ -191,57 +200,83 @@ def process_document(document_id: str, db: Session) -> None:
                 )
             return
 
-        # ── Clasificación: Gemini decide si encaja o sugiere categoría nueva ──
-        result = gemini_service.classify_or_suggest(
-            ocr_text, category_names, doc_name=doc.original_filename
-        )
-
-        if result is None:
-            # Fallback: Gemini no disponible → heurística/zero-shot.
-            predicted_name, score = nlp_service.classify_document(
-                ocr_text, category_names
-            )
-            matched = next((c for c in categories if c.name == predicted_name), None) or categories[0]
-            doc.category_id = matched.id
-            doc.ai_confidence_score = score
-            doc.status = DocStatus.classified if score >= CONFIDENCE_THRESHOLD else DocStatus.review
-        elif result["category"]:
-            # Encaja en una categoría existente.
-            matched = next(c for c in categories if c.name == result["category"])
-            score = result["confidence"]
-            doc.category_id = matched.id
-            doc.ai_confidence_score = score
-            doc.status = DocStatus.classified if score >= CONFIDENCE_THRESHOLD else DocStatus.review
-            logger.info(
-                f"Pipeline: clasificado '{matched.name}' (score={score:.2f}) doc={document_id}"
-            )
+        # ── Clasificación (gated por plan) ────────────────────────────────────
+        if not ai_classify_ok:
+            # Plan sin IA: clasificación "por código" (heurística de keywords, sin
+            # Gemini). Si ninguna regla coincide, queda en review para revisión manual.
+            match = nlp_service.classify_by_keywords(ocr_text, category_names)
+            if match:
+                name, score = match
+                matched = next((c for c in categories if c.name == name), None)
+                if matched:
+                    doc.category_id = matched.id
+                    doc.ai_confidence_score = score
+                    doc.status = DocStatus.classified
+                    logger.info(
+                        f"Pipeline: clasificado por código '{matched.name}' "
+                        f"(score={score:.2f}) doc={document_id}"
+                    )
+            if doc.category_id is None:
+                doc.status = DocStatus.review
+                logger.info(
+                    f"Pipeline: sin coincidencia por código → review manual doc={document_id}"
+                )
+            doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
         else:
-            # NO encaja en ninguna → no forzar: sin categoría, review + sugerencia.
-            doc.category_id = None
-            doc.ai_confidence_score = result["confidence"]
-            doc.status = DocStatus.review
-            # Recordar la categoría propuesta por Gemini en el propio documento, para
-            # poder clasificarlo en lote al aprobar la sugerencia (sin re-llamar a IA).
-            doc.ai_suggested_category = result["new_category"]
-            logger.info(
-                f"Pipeline: no encaja en categorías existentes → review + sugerencia "
-                f"'{result['new_category']}' doc={document_id}"
-            )
-            try:
-                if result["new_category"]:
-                    _persist_suggestion(db, doc, result["new_category"], result["confidence"])
-            except Exception as sug_exc:
-                logger.error(
-                    f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
-                    exc_info=True,
+            # Gemini decide si encaja o sugiere categoría nueva (consume crédito).
+            result = None
+            if plan_service.consume_ai_credit(db, org):
+                result = gemini_service.classify_or_suggest(
+                    ocr_text, category_names, doc_name=doc.original_filename
                 )
 
-        doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        db.commit()
+            if result is None:
+                # Sin crédito o Gemini no disponible → heurística local (gratis).
+                predicted_name, score = nlp_service.classify_document(
+                    ocr_text, category_names
+                )
+                matched = next((c for c in categories if c.name == predicted_name), None) or categories[0]
+                doc.category_id = matched.id
+                doc.ai_confidence_score = score
+                doc.status = DocStatus.classified if score >= CONFIDENCE_THRESHOLD else DocStatus.review
+            elif result["category"]:
+                # Encaja en una categoría existente.
+                matched = next(c for c in categories if c.name == result["category"])
+                score = result["confidence"]
+                doc.category_id = matched.id
+                doc.ai_confidence_score = score
+                doc.status = DocStatus.classified if score >= CONFIDENCE_THRESHOLD else DocStatus.review
+                logger.info(
+                    f"Pipeline: clasificado '{matched.name}' (score={score:.2f}) doc={document_id}"
+                )
+            else:
+                # NO encaja → sin categoría, review + sugerencia (recuerda el nombre
+                # propuesto para clasificación en lote al aprobar, sin re-llamar a IA).
+                doc.category_id = None
+                doc.ai_confidence_score = result["confidence"]
+                doc.status = DocStatus.review
+                doc.ai_suggested_category = result["new_category"]
+                logger.info(
+                    f"Pipeline: no encaja en categorías existentes → review + sugerencia "
+                    f"'{result['new_category']}' doc={document_id}"
+                )
+                try:
+                    if ai_suggest_ok and result["new_category"]:
+                        _persist_suggestion(db, doc, result["new_category"], result["confidence"])
+                except Exception as sug_exc:
+                    logger.error(
+                        f"Pipeline: error sugiriendo categoría doc={document_id}: {sug_exc}",
+                        exc_info=True,
+                    )
 
-        # ── 6: Alertas de vencimiento ─────────────────────────────────────────
+            doc.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+
+        # ── 6: Alertas de vencimiento (detección por código en TODOS los planes;
+        #      descripción con IA solo en planes de pago) ──────────────────────
         try:
-            alerts = alert_service.detect_expiry_dates(ocr_text)
+            alerts = alert_service.detect_expiry_dates(ocr_text, use_ai=ai_summary_ok)
             if alerts:
                 alert_service.persist_alerts(db, document_id, doc.organization_id, alerts)
         except Exception as alert_exc:

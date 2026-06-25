@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { PlanProvider } from './context/PlanContext'
 import { getOrganizationBySlug } from './services/api/organizations'
 
 import LoginPage from './pages/LoginPage'
+import PlanPage from './pages/PlanPage'
+import ActivationCodesPage from './pages/ActivationCodesPage'
 import DashboardPage from './pages/DashboardPage'
 import DocumentsPage from './pages/DocumentsPage'
 import UploadPage from './pages/UploadPage'
@@ -141,6 +144,10 @@ function AppRoutes() {
         path="/admin/audit"
         element={<SuperAdminRoute><AuditPage /></SuperAdminRoute>}
       />
+      <Route
+        path="/admin/activation-codes"
+        element={<SuperAdminRoute><ActivationCodesPage /></SuperAdminRoute>}
+      />
 
       {/* ── Rutas TENANT-SCOPED (bloqueadas para super_admin) ────────── */}
       <Route
@@ -175,6 +182,10 @@ function AppRoutes() {
         path="/:tenantSlug/risk-rules"
         element={<TenantAdminRoute><TenantGuard><RiskRulesPage /></TenantGuard></TenantAdminRoute>}
       />
+      <Route
+        path="/:tenantSlug/plan"
+        element={<TenantAdminRoute><TenantGuard><PlanPage /></TenantGuard></TenantAdminRoute>}
+      />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -185,7 +196,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <PlanProvider>
+          <AppRoutes />
+        </PlanProvider>
       </AuthProvider>
     </BrowserRouter>
   )

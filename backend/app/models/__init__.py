@@ -9,6 +9,7 @@ from app.models.alert import DocumentAlert, AlertType, AlertStatus
 from app.models.approval import DocumentApproval, ApprovalStatus
 from app.models.risk_rule import RiskRule, RiskLevel
 from app.models.category_suggestion import CategorySuggestion, SuggestionStatus
+from app.models.activation_code import ActivationCode
 
 __all__ = [
     "Base",
@@ -29,4 +30,5 @@ __all__ = [
     "RiskLevel",
     "CategorySuggestion",
     "SuggestionStatus",
+    "ActivationCode",
 ]

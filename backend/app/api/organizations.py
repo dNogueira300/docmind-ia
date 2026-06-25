@@ -1,4 +1,6 @@
 """CRUD de organizaciones (tenants) — solo super_admin."""
+import secrets
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from typing import Annotated, Optional
 
@@ -7,20 +9,36 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_super_admin
+from app.core.deps import (
+    require_super_admin, require_company_admin, get_current_user,
+    get_active_organization_id,
+)
 from app.core.security import hash_password
+from app.core.plans import Plan, normalize_plan
 from app.models.user import User, UserRole
 from app.models.organization import Organization
 from app.models.category import Category
 from app.models.document import Document
+from app.models.activation_code import ActivationCode
 from app.schemas.organization import (
     OrganizationCreate, OrganizationUpdate, OrganizationResponse,
     OrganizationStats, OrganizationPublic, CreateAdminInOrg,
+    ActivateCodeRequest, ActivationCodeCreate, ActivationCodeResponse,
 )
+from app.services import plan_service
 
 router = APIRouter(prefix="/organizations", tags=["Organizaciones"])
 
 SuperAdmin = Annotated[User, Depends(require_super_admin)]
+CompanyAdmin = Annotated[User, Depends(require_company_admin)]
+AnyRole = Annotated[User, Depends(get_current_user)]
+
+
+def _generate_code() -> str:
+    """Genera un código tipo DOCMIND-XXXX-XXXX (legible, sin caracteres ambiguos)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    part = lambda: "".join(secrets.choice(alphabet) for _ in range(4))
+    return f"DOCMIND-{part()}-{part()}"
 
 
 # ── Endpoint público para resolver tenant en la pantalla de login ────────────
@@ -44,6 +62,115 @@ async def get_organization_by_slug(
     if org is None or not org.active:
         raise HTTPException(status_code=404, detail="Empresa no encontrada o inactiva")
     return org
+
+
+# ── Plan y activación (admin de empresa) ─────────────────────────────────────
+
+
+@router.get("/plan", summary="Plan, límites y uso de la empresa activa")
+async def get_plan(
+    current_user: AnyRole,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Devuelve el plan vigente, sus límites/features y el uso actual."""
+    org = plan_service.get_org(db, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return plan_service.plan_overview(db, org)
+
+
+@router.post("/activate", summary="Canjear código de activación → activa el plan")
+async def activate_plan(
+    body: ActivateCodeRequest,
+    current_user: CompanyAdmin,
+    organization_id: UUID = Depends(get_active_organization_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    """El admin de la empresa canjea un código y activa el plan correspondiente."""
+    code = (body.code or "").strip().upper()
+    ac = db.query(ActivationCode).filter(ActivationCode.code == code).first()
+    if ac is None:
+        raise HTTPException(status_code=404, detail="Código de activación inválido")
+    if ac.used:
+        raise HTTPException(status_code=409, detail="Este código ya fue utilizado")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if ac.expires_at and ac.expires_at < now:
+        raise HTTPException(status_code=409, detail="El código de activación expiró")
+
+    org = plan_service.get_org(db, organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    org.plan = normalize_plan(ac.plan).value
+    org.plan_expires_at = now + timedelta(days=ac.duration_days)
+    # Reiniciar la ventana de créditos al activar.
+    org.ai_credits_used = 0
+    org.ai_credits_reset_at = now + timedelta(days=30)
+
+    ac.used = True
+    ac.used_by_org = org.id
+    ac.used_at = now
+    db.commit()
+
+    return {
+        "detail": f"Plan '{org.plan}' activado hasta {org.plan_expires_at:%Y-%m-%d}",
+        "plan": org.plan,
+        "plan_expires_at": org.plan_expires_at.isoformat(),
+    }
+
+
+# ── Generación de códigos (super_admin) ──────────────────────────────────────
+
+
+@router.post(
+    "/activation-codes",
+    response_model=list[ActivationCodeResponse],
+    status_code=201,
+    summary="Generar código(s) de activación (super_admin)",
+)
+async def create_activation_codes(
+    data: ActivationCodeCreate,
+    current_user: SuperAdmin,
+    db: Session = Depends(get_db),
+) -> list[ActivationCode]:
+    plan = normalize_plan(data.plan)
+    if plan == Plan.free:
+        raise HTTPException(
+            status_code=422, detail="No tiene sentido un código para el plan gratuito"
+        )
+    qty = max(1, min(data.quantity, 100))
+    codes: list[ActivationCode] = []
+    for _ in range(qty):
+        code = _generate_code()
+        while db.query(ActivationCode).filter(ActivationCode.code == code).first():
+            code = _generate_code()
+        ac = ActivationCode(
+            code=code, plan=plan.value, duration_days=data.duration_days
+        )
+        db.add(ac)
+        codes.append(ac)
+    db.commit()
+    for ac in codes:
+        db.refresh(ac)
+    return codes
+
+
+@router.get(
+    "/activation-codes",
+    response_model=list[ActivationCodeResponse],
+    summary="Listar códigos de activación (super_admin)",
+)
+async def list_activation_codes(
+    current_user: SuperAdmin,
+    db: Session = Depends(get_db),
+    only_unused: bool = False,
+) -> list[ActivationCode]:
+    q = db.query(ActivationCode)
+    if only_unused:
+        q = q.filter(ActivationCode.used.is_(False))
+    return q.order_by(ActivationCode.created_at.desc()).limit(200).all()
 
 
 # ── CRUD de organizaciones (super_admin) ─────────────────────────────────────

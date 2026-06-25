@@ -166,6 +166,33 @@ def get_active_organization_id(
     return org.id
 
 
+# ── Gating por plan (monetización) ───────────────────────────────────────────
+
+def require_feature(feature: str):
+    """
+    Dependencia que exige que el plan de la organización habilite `feature`.
+
+    Retorna la Organization (para que el handler pueda consumir créditos de IA).
+    Responde 402 Payment Required si el plan no incluye la feature.
+    """
+
+    def guard(
+        organization_id: UUID = Depends(get_active_organization_id),
+        db: Session = Depends(get_db),
+    ):
+        from app.services import plan_service  # noqa: PLC0415
+
+        org = plan_service.get_org(db, organization_id)
+        if org is None or not plan_service.has_feature(org, feature):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Esta función no está incluida en tu plan. Mejora tu plan para usarla.",
+            )
+        return org
+
+    return guard
+
+
 # Atajos de uso frecuente
 require_admin = require_role("admin")
 require_editor_or_admin = require_role("admin", "editor")

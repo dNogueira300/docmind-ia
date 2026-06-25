@@ -107,10 +107,12 @@ def _parse_date(raw: str) -> Optional[date]:
     return _parse_date_numeric(raw)
 
 
-def _build_alert_title(text: str, m: "re.Match", alert_type: str) -> str:
+def _build_alert_title(text: str, m: "re.Match", alert_type: str, use_ai: bool = True) -> str:
     """
     Genera una descripción clara para la alerta.
-    Intenta usar Gemini primero; cae a NER/heurística si no está disponible.
+
+    Si `use_ai` es True intenta Gemini primero (descripción más natural); si es
+    False (plan sin IA) o Gemini no responde, usa NER/heurística por código.
     """
     label = _TYPE_LABELS.get(alert_type, 'Alerta')
 
@@ -119,13 +121,14 @@ def _build_alert_title(text: str, m: "re.Match", alert_type: str) -> str:
     sentence_end   = min(len(text), m.end() + 150)
     sentence       = text[sentence_start:sentence_end].strip()
 
-    # Intentar con Gemini para descripción más clara
-    from app.services import gemini_service  # noqa: PLC0415
-    desc = gemini_service.generate_alert_description(sentence, alert_type)
-    if desc:
-        return desc
+    # Descripción con Gemini solo si el plan lo permite.
+    if use_ai:
+        from app.services import gemini_service  # noqa: PLC0415
+        desc = gemini_service.generate_alert_description(sentence, alert_type)
+        if desc:
+            return desc
 
-    # Fallback: NER spaCy
+    # Fallback / plan sin IA: NER spaCy + heurística (por código).
     from app.services.ner_service import extract_subject  # noqa: PLC0415
     trigger_pos = m.start() - sentence_start
     subject = extract_subject(sentence, trigger_pos)
@@ -150,9 +153,13 @@ def _clean_subject_text(subject: str) -> str:
     return s
 
 
-def detect_expiry_dates(text: str) -> list[dict]:
+def detect_expiry_dates(text: str, use_ai: bool = True) -> list[dict]:
     """
     Escanea el texto OCR buscando fechas de vencimiento con sus keywords.
+
+    La detección de fechas es 100% por código (regex). `use_ai` solo controla si
+    la DESCRIPCIÓN de cada alerta se enriquece con Gemini (planes de pago) o se
+    genera por código (NER/heurística, plan gratuito).
 
     Devuelve lista de dicts con:
       detected_date, alert_date, alert_type, detail (fragmento de contexto)
@@ -185,7 +192,7 @@ def detect_expiry_dates(text: str) -> list[dict]:
             # Generar un título limpio para la alerta:
             # extraer el SUJETO que vence/expira (texto justo antes del trigger),
             # en lugar de mostrar un fragmento crudo del OCR.
-            detail = _build_alert_title(text, m, alert_type)
+            detail = _build_alert_title(text, m, alert_type, use_ai=use_ai)
 
             results.append({
                 'detected_date': detected,

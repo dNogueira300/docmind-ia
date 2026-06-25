@@ -178,6 +178,20 @@ def _match_category_by_keyword(
     return None
 
 
+def classify_by_keywords(
+    text: str, categories: list[str]
+) -> Optional[tuple[str, float]]:
+    """
+    Clasificación "por código": solo heurística de palabras clave, sin modelo ML
+    ni IA externa. Para planes que NO incluyen auto-clasificación con Gemini.
+
+    Returns (nombre_categoria, score) o None si ninguna regla coincide con claridad.
+    """
+    if not text or not text.strip() or not categories:
+        return None
+    return _match_category_by_keyword(text, categories)
+
+
 def _get_classifier():
     """Carga el pipeline zero-shot la primera vez (puede tardar ~30s)."""
     global _classifier

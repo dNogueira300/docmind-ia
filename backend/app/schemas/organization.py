@@ -40,6 +40,8 @@ class OrganizationPublic(BaseModel):
 
 class OrganizationResponse(OrganizationPublic):
     """Vista completa — solo expuesta a super_admin."""
+    plan: str = "free"
+    plan_expires_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +88,32 @@ class OrganizationStats(BaseModel):
     categories_count: int
     documents_count: int
     storage_kb: int
+
+
+class ActivateCodeRequest(BaseModel):
+    """El admin de una empresa canjea un código para activar un plan."""
+    code: str
+
+
+class ActivationCodeCreate(BaseModel):
+    """super_admin genera uno o varios códigos de activación."""
+    plan: str                       # "pro" | "enterprise"
+    duration_days: int = 365
+    quantity: int = 1               # cuántos códigos generar
+
+
+class ActivationCodeResponse(BaseModel):
+    id: UUID
+    code: str
+    plan: str
+    duration_days: int
+    used: bool
+    used_by_org: Optional[UUID] = None
+    used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class CreateAdminInOrg(BaseModel):

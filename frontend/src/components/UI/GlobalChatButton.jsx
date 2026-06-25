@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { BrainCircuit, X, Send, Loader2, RotateCcw } from 'lucide-react'
 import { chatGlobal } from '../../services/api/chat'
 import { useAuth } from '../../context/AuthContext'
+import { usePlan } from '../../context/PlanContext'
 
 const SUGGESTIONS = [
   '¿Cuántos documentos hay en el sistema?',
@@ -47,15 +48,13 @@ function Message({ role, content }) {
 
 export default function GlobalChatButton() {
   const { isAuthenticated } = useAuth()
+  const { hasFeature } = usePlan()
   const [open,    setOpen]    = useState(false)
   const [history, setHistory] = useState([])
   const [input,   setInput]   = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
   const inputRef  = useRef(null)
-
-  // No mostrar si no está autenticado
-  if (!isAuthenticated) return null
 
   // Auto-scroll
   useEffect(() => {
@@ -66,6 +65,10 @@ export default function GlobalChatButton() {
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 150)
   }, [open])
+
+  // Todos los hooks deben ejecutarse SIEMPRE antes de cualquier return condicional
+  // (regla de los Hooks). No mostrar si no hay sesión o el plan no incluye chatbot.
+  if (!isAuthenticated || !hasFeature('chatbot')) return null
 
   const sendMessage = async (msg) => {
     const text = msg.trim()

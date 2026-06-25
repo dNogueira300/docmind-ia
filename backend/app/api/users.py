@@ -362,6 +362,20 @@ async def create_user(
             detail="No se puede crear un super administrador desde este endpoint",
         )
 
+    # Límite de usuarios según el plan de la organización.
+    from app.services import plan_service  # noqa: PLC0415
+    org = plan_service.get_org(db, organization_id)
+    if org and not plan_service.can_add_user(db, org):
+        from app.core.plans import plan_limits  # noqa: PLC0415
+        limit = plan_limits(plan_service.effective_plan(org))["max_users"]
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Alcanzaste el límite de {limit} usuarios de tu plan. "
+                "Mejora tu plan para agregar más."
+            ),
+        )
+
     existing = (
         db.query(User)
         .filter(

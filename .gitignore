@@ -110,3 +110,5 @@ temp/
 # .claude/settings.json    → configuración compartida del equipo
 # .claude/skills/          → skills del proyecto
 # CLAUDE.md                → contexto raíz
+# Informe interno de monetización (no se sube)
+INFORME_PLANES_MONETIZACION.md

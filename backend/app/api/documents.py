@@ -196,6 +196,23 @@ async def upload_document(
     document_id = uuid4()
     file_size_kb = len(file_data) // 1024
 
+    # Límite de almacenamiento según el plan de la organización.
+    from app.services import plan_service  # noqa: PLC0415
+    from app.core.plans import plan_limits  # noqa: PLC0415
+    org = plan_service.get_org(db, organization_id)
+    if org and not plan_service.can_store(db, org, file_size_kb):
+        limit_mb = plan_limits(plan_service.effective_plan(org))["max_storage_mb"]
+        logger.warning(
+            "Org %s alcanzó el límite de almacenamiento (%s MB)", organization_id, limit_mb
+        )
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Alcanzaste el límite de almacenamiento de tu plan ({limit_mb} MB). "
+                "Elimina documentos o mejora tu plan."
+            ),
+        )
+
     # Subir a MinIO
     stored_path = minio_service.upload_file(
         file_data=file_data,
@@ -366,8 +383,15 @@ async def search_documents(
         for doc, snippet in rows
     ]
 
-    # Re-ranking semántico opcional con Gemini sobre los candidatos del FTS.
-    if semantic and results:
+    # Re-ranking semántico opcional con Gemini (solo si el plan lo incluye y hay
+    # créditos; si no, se mantiene el orden FTS sin error).
+    from app.services import plan_service  # noqa: PLC0415
+    _sem_org = plan_service.get_org(db, organization_id) if semantic and results else None
+    if (
+        semantic and results and _sem_org
+        and plan_service.has_feature(_sem_org, "semantic_search")
+        and plan_service.consume_ai_credit(db, _sem_org)
+    ):
         order = gemini_service.rerank_semantic(
             query_str,
             [
