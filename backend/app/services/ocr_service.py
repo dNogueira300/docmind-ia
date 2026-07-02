@@ -72,9 +72,11 @@ def build_searchable_pdf(stored_path: str, file_type: str) -> Optional[bytes]:
     """
     Genera un PDF con capa de texto OCR sobre el documento original.
 
-    Mantiene la apariencia del original (la imagen) y añade una capa de texto
-    invisible seleccionable/editable en cualquier editor de PDF. Aplica a PDFs
-    escaneados e imágenes (jpg/png).
+    Binariza cada página (Otsu con sesgo a lo oscuro) antes de generar el PDF:
+    esto elimina el show-through (texto fantasma del reverso de la hoja) tanto
+    de la imagen visible como de la capa de texto invisible. El resultado es un
+    PDF en blanco y negro nítido, seleccionable/editable, sin el fantasma.
+    Aplica a PDFs escaneados e imágenes (jpg/png).
 
     Returns:
         Bytes del PDF, o None si no se pudo generar.
@@ -90,10 +92,10 @@ def build_searchable_pdf(stored_path: str, file_type: str) -> Optional[bytes]:
 
         page_pdfs: list[bytes] = []
         for img in pages:
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
+            # Binarizar para quitar el show-through de imagen y capa de texto.
+            clean = _binarize_image(img)
             page_pdfs.append(
-                pytesseract.image_to_pdf_or_hocr(img, lang="spa", extension="pdf")
+                pytesseract.image_to_pdf_or_hocr(clean, lang="spa", extension="pdf")
             )
 
         if not page_pdfs:
