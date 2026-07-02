@@ -288,9 +288,10 @@ async def search_documents(
     2. **Contenido OCR**: PostgreSQL full-text search en español sobre `ocr_text`
        (índice GIN existente). Encuentra "contrato" dentro del documento aunque
        el archivo se llame `1234.pdf`.
-    3. **Fuzzy / tolerante a errores**: similitud trigram (`pg_trgm`) sobre
-       nombre y contenido. Si el usuario escribe `conratro`, encuentra
-       documentos con `contrato`.
+    3. **Fuzzy / tolerante a errores**: similitud trigram (`pg_trgm`) SOLO sobre
+       el nombre del archivo. Si el usuario escribe `conratro`, encuentra
+       `contrato.pdf`. En el contenido NO se aplica fuzzy: si la palabra/frase
+       no aparece en el texto, el documento no se devuelve.
 
     Resultados ordenados por mejor relevancia combinada.
     """
@@ -300,7 +301,10 @@ async def search_documents(
 
     org_id = organization_id
     like_pattern = f"%{query_str}%"
-    fuzzy_threshold = 0.2  # similitud mínima para considerar match fuzzy
+    # Tolerancia a errores tipográficos SOLO en el nombre del archivo. En el
+    # contenido NO se aplica fuzzy: si la palabra/frase no aparece en el texto,
+    # el documento no debe salir (antes un umbral bajo hacía match con todo).
+    name_fuzzy_threshold = 0.45
 
     tsquery = func.plainto_tsquery("spanish", query_str)
     tsvector = func.to_tsvector("spanish", func.coalesce(Document.ocr_text, ""))
@@ -322,30 +326,31 @@ async def search_documents(
         else_=func.similarity(Document.original_filename, query_str),
     )
     fts_score = func.coalesce(func.ts_rank(tsvector, tsquery), 0.0)
-    fuzzy_content_score = func.coalesce(
-        func.word_similarity(query_str, func.coalesce(Document.ocr_text, "")),
-        0.0,
+    # Boost si la frase aparece literal (substring) en el contenido.
+    content_like_score = case(
+        (func.coalesce(Document.ocr_text, "").ilike(like_pattern), 0.5),
+        else_=0.0,
     )
 
-    # Condiciones (cualquiera basta)
+    # Condiciones (cualquiera basta) — todas exigen que el término APAREZCA:
+    #   1. substring en el nombre     2. nombre similar (typos)
+    #   3. full-text en el contenido  4. substring literal en el contenido
     cond_name_like = Document.original_filename.ilike(like_pattern)
     cond_name_fuzzy = func.similarity(
         Document.original_filename, query_str
-    ) > fuzzy_threshold
+    ) > name_fuzzy_threshold
     cond_fts = tsvector.op("@@")(tsquery)
-    cond_fuzzy_content = func.word_similarity(
-        query_str, func.coalesce(Document.ocr_text, "")
-    ) > fuzzy_threshold
+    cond_content_like = func.coalesce(Document.ocr_text, "").ilike(like_pattern)
 
     rows = (
         db.query(Document, snippet_expr.label("snippet"))
         .options(joinedload(Document.uploader))
         .filter(
             Document.organization_id == org_id,
-            or_(cond_name_like, cond_name_fuzzy, cond_fts, cond_fuzzy_content),
+            or_(cond_name_like, cond_name_fuzzy, cond_fts, cond_content_like),
         )
         .order_by(
-            desc(name_score + fts_score + fuzzy_content_score),
+            desc(name_score + fts_score + content_like_score),
             Document.created_at.desc(),
         )
         .offset(skip)
@@ -354,10 +359,26 @@ async def search_documents(
     )
 
     def _clean_snippet(doc: Document, raw: Optional[str]) -> Optional[str]:
-        # ts_headline solo resalta si hubo match FTS sobre ocr_text. Para matches
-        # solo por nombre/fuzzy (o sin marca «»), caemos al resumen IA.
+        # 1. ts_headline resaltó el término (match FTS sobre el contenido).
         if raw and "«" in raw:
             return raw.strip()
+        # 2. La frase aparece literal en el contenido pero FTS no la resaltó
+        #    (p.ej. frases con stopwords): construir el fragmento a mano.
+        text = doc.ocr_text or ""
+        pos = text.lower().find(query_str.lower())
+        if pos != -1:
+            start = max(0, pos - 40)
+            end = min(len(text), pos + len(query_str) + 80)
+            rel = pos - start
+            frag = text[start:end]
+            frag = (
+                frag[:rel] + "«" + frag[rel:rel + len(query_str)] + "»"
+                + frag[rel + len(query_str):]
+            )
+            frag = " ".join(frag.split())  # colapsar saltos/espacios del OCR
+            return ("… " if start > 0 else "") + frag + (" …" if end < len(text) else "")
+        # 3. Coincidió solo por el nombre del archivo: mostrar el resumen como
+        #    contexto (no hay fragmento de contenido que resaltar).
         return (doc.ai_summary or "").strip() or None
 
     results = [
