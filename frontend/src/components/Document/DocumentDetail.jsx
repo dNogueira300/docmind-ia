@@ -143,6 +143,9 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
   const [previewTab,     setPreviewTab]     = useState('original')  // 'original' | 'digitalized'
   const [rightTab,       setRightTab]       = useState('info')      // 'info' | 'chat' | 'actions'
   const [docAlerts,      setDocAlerts]      = useState([])
+  // Conversación del chat: vive aquí (no en ChatPanel) para que sobreviva al
+  // cambiar de pestaña; se reinicia al abrir otro documento.
+  const [chatHistory,    setChatHistory]    = useState([])
 
   // Acciones
   const [downloading,     setDownloading]     = useState(false)
@@ -161,6 +164,7 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
 
   useEffect(() => {
     let cancelled = false
+    setChatHistory([])   // nueva conversación al cambiar de documento
     getDocument(initialDoc.id)
       .then((full) => { if (!cancelled) setDoc(full) })
       .catch(console.error)
@@ -466,6 +470,8 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
                     documentId={initialDoc.id}
                     docName={doc.original_filename}
                     initiallyOpen
+                    history={chatHistory}
+                    onHistoryChange={setChatHistory}
                   />
                 </div>
               )}

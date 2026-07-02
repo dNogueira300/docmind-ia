@@ -3,6 +3,7 @@ import { BrainCircuit, X, Send, Loader2, RotateCcw } from 'lucide-react'
 import { chatGlobal } from '../../services/api/chat'
 import { useAuth } from '../../context/AuthContext'
 import { usePlan } from '../../context/PlanContext'
+import MarkdownLite from './MarkdownLite'
 
 const SUGGESTIONS = [
   '¿Cuántos documentos hay en el sistema?',
@@ -40,7 +41,7 @@ function Message({ role, content }) {
           border: isUser ? 'none' : '1px solid var(--color-border)',
         }}
       >
-        {content}
+        {isUser ? content : <MarkdownLite text={content} />}
       </div>
     </div>
   )

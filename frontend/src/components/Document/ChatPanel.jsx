@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, BrainCircuit, User, Loader2, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react'
 import { chatWithDocument } from '../../services/api/chat'
+import MarkdownLite from '../UI/MarkdownLite'
 
 function Message({ role, content }) {
   const isUser = role === 'user'
@@ -29,18 +30,28 @@ function Message({ role, content }) {
           border: isUser ? 'none' : '1px solid var(--color-border)',
         }}
       >
-        {content}
+        {isUser ? content : <MarkdownLite text={content} />}
       </div>
     </div>
   )
 }
 
 /**
- * @param {{ documentId: string, docName: string, initiallyOpen?: boolean }} props
+ * @param {{ documentId: string, docName: string, initiallyOpen?: boolean,
+ *          history?: Array, onHistoryChange?: Function }} props
+ *
+ * Si se pasan `history` y `onHistoryChange`, el estado de la conversación es
+ * controlado por el componente padre (para que sobreviva al desmontar/montar,
+ * p.ej. al cambiar de pestaña). Si no, usa estado interno.
  */
-export default function ChatPanel({ documentId, docName, initiallyOpen = false }) {
-  const [open, setOpen]       = useState(initiallyOpen)
-  const [history, setHistory] = useState([])
+export default function ChatPanel({
+  documentId, docName, initiallyOpen = false,
+  history: controlledHistory, onHistoryChange,
+}) {
+  const [open, setOpen]                 = useState(initiallyOpen)
+  const [localHistory, setLocalHistory] = useState([])
+  const history    = controlledHistory ?? localHistory
+  const setHistory = onHistoryChange ?? setLocalHistory
   const [input, setInput]     = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef             = useRef(null)
