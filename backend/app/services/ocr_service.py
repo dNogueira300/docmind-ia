@@ -17,26 +17,54 @@ MIN_DIGITAL_TEXT_LENGTH = 50
 # y memoria (rasterizar alto en multipágina dispara la RAM en Railway).
 SEARCHABLE_PDF_DPI = 150
 
-# Secuencia de intentos: (usar_preprocesamiento, lang, psm)
+# Secuencia de intentos: (modo, lang, psm, es_fallback)
+#   modo "bin"  → binarización Otsu (elimina el show-through / texto fantasma
+#                 del reverso de la hoja que se transparenta en el escaneo)
+#   modo "soft" → preprocesamiento suave (grises + contraste + nitidez)
+#   modo "raw"  → imagen original sin tocar
+#   es_fallback → solo se prueba si los intentos en español fallaron casi por
+#                 completo (evita correr OCR en inglés en páginas ya resueltas)
 _OCR_ATTEMPTS = [
-    (True,  "spa",     3),
-    (True,  "spa",     6),   # uniform block — mejor para cartas formales
-    (False, "spa",     6),
-    (False, "spa",     3),
-    (False, "spa",     4),
-    (False, "spa+eng", 6),
-    (False, "spa+eng", 3),
-    (False, "eng",     6),
-    (False, "eng",     3),
+    ("bin",  "spa",     3, False),   # binarizado suele ganar con show-through
+    ("bin",  "spa",     6, False),
+    ("raw",  "spa",     6, False),
+    ("raw",  "spa",     3, False),
+    ("soft", "spa",     6, False),
+    ("raw",  "spa+eng", 6, True),    # fallback: solo si spa casi no extrajo nada
+    ("raw",  "eng",     6, True),
 ]
 
 # DPI a probar en orden. Reducido para producción (Railway): rasterizar a 300 DPI
 # PDFs de varias páginas consume mucha memoria/CPU. Secuencia escalada ×0.5.
 _DPI_SEQUENCE = [150, 100, 75]
 
-# Por encima de este umbral consideramos el resultado "suficientemente bueno"
-# y dejamos de probar combinaciones. 500 chars ≈ un párrafo completo.
-_CHARS_GOOD_ENOUGH = 500
+# Por encima de este número de palabras "reales" consideramos el resultado
+# "suficientemente bueno" y dejamos de probar combinaciones. ~60 palabras ≈
+# un párrafo completo legible.
+_WORDS_GOOD_ENOUGH = 60
+
+# Si ya extrajimos al menos estas palabras en español, no vale la pena correr
+# los intentos de fallback en inglés (que son lentos y rara vez mejoran).
+_SKIP_FALLBACK_MIN_WORDS = 15
+
+# Lado máximo (px) al que se reduce la imagen antes del OCR. Los escaneos vienen
+# a resoluciones enormes (p.ej. 5313×7313 ≈ 39 MP) que hacen a Tesseract lentísimo
+# sin ganar precisión. ~3000 px conserva la legibilidad y acelera ~4-5×.
+_MAX_OCR_DIMENSION = 3000
+
+# Al filtrar líneas, descartamos las que tienen una proporción de tokens
+# "palabra real" por debajo de este umbral (ruido de show-through).
+_LINE_MIN_QUALITY = 0.35
+
+# Si la capa de texto embebida en un PDF (OCR previo del escáner) tiene una
+# proporción de palabras reales por debajo de esto, se descarta y se re-OCR.
+# Texto español limpio ≈ 0.6-0.8; basura de show-through ≈ 0.2-0.35.
+_DIGITAL_TEXT_MIN_QUALITY = 0.55
+
+# Confianza mínima (0-100) por palabra que reporta Tesseract. El show-through
+# (texto fantasma del reverso) se lee con confianza baja, así que se descarta.
+# El texto real de un escaneo nítido suele venir con 70-95.
+_MIN_WORD_CONFIDENCE = 55
 
 
 def extract_text(stored_path: str, file_type: str) -> str:
@@ -58,9 +86,11 @@ def build_searchable_pdf(stored_path: str, file_type: str) -> Optional[bytes]:
     """
     Genera un PDF con capa de texto OCR sobre el documento original.
 
-    Mantiene la apariencia del original (la imagen) y añade una capa de texto
-    invisible seleccionable/editable en cualquier editor de PDF. Aplica a PDFs
-    escaneados e imágenes (jpg/png).
+    Binariza cada página (Otsu con sesgo a lo oscuro) antes de generar el PDF:
+    esto elimina el show-through (texto fantasma del reverso de la hoja) tanto
+    de la imagen visible como de la capa de texto invisible. El resultado es un
+    PDF en blanco y negro nítido, seleccionable/editable, sin el fantasma.
+    Aplica a PDFs escaneados e imágenes (jpg/png).
 
     Returns:
         Bytes del PDF, o None si no se pudo generar.
@@ -76,10 +106,11 @@ def build_searchable_pdf(stored_path: str, file_type: str) -> Optional[bytes]:
 
         page_pdfs: list[bytes] = []
         for img in pages:
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
+            # Reducir + binarizar: quita el show-through (imagen y capa de texto)
+            # y evita generar el PDF sobre una imagen de decenas de megapíxeles.
+            clean = _binarize_image(_downscale_for_ocr(img))
             page_pdfs.append(
-                pytesseract.image_to_pdf_or_hocr(img, lang="spa", extension="pdf")
+                pytesseract.image_to_pdf_or_hocr(clean, lang="spa", extension="pdf")
             )
 
         if not page_pdfs:
@@ -107,11 +138,24 @@ def _extract_pdf(file_bytes: bytes) -> str:
     try:
         import pypdf  # noqa: PLC0415
         reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-        text = " ".join(p.extract_text() or "" for p in reader.pages).strip()
+        text = "\n".join(p.extract_text() or "" for p in reader.pages).strip()
         if len(text) >= MIN_DIGITAL_TEXT_LENGTH:
-            logger.info("PDF digital detectado — usando pypdf")
-            return text
-        logger.info("Poco texto en pypdf — intentando Tesseract")
+            # No basta con que exista una capa de texto: muchos escáneres
+            # incrustan un OCR previo de mala calidad que incluye el
+            # show-through (texto fantasma del reverso). Si la capa es de baja
+            # calidad, la descartamos y re-OCR sobre la imagen rasterizada,
+            # donde la binarización sí elimina el fantasma.
+            quality = _text_quality_ratio(text)
+            if quality >= _DIGITAL_TEXT_MIN_QUALITY:
+                logger.info(f"PDF digital detectado (calidad={quality:.2f}) — usando pypdf")
+                return strip_garbage_lines(text)
+            logger.info(
+                f"Capa de texto del PDF de baja calidad (calidad={quality:.2f} < "
+                f"{_DIGITAL_TEXT_MIN_QUALITY}) — posible OCR previo con show-through. "
+                "Rasterizando y re-OCR con Tesseract."
+            )
+        else:
+            logger.info("Poco texto en pypdf — intentando Tesseract")
     except Exception as exc:
         logger.warning(f"pypdf falló: {exc}")
 
@@ -205,11 +249,198 @@ def _analyze_image(img: "Image.Image") -> dict:
     }
 
 
+def _is_word_like(token: str) -> bool:
+    """Un token parece una palabra real: ≥3 chars y mayoría alfabéticos.
+
+    El ruido de show-through produce tokens de 1-2 chars y símbolos sueltos
+    ('A', 'E', '==%', 'z', ':'), que esta función descarta.
+    """
+    if len(token) < 3:
+        return False
+    letters = sum(c.isalpha() for c in token)
+    return letters / len(token) >= 0.7
+
+
+def _count_good_words(text: str) -> int:
+    """Número de tokens que parecen palabras reales. Métrica de calidad de OCR."""
+    return sum(1 for t in text.split() if _is_word_like(t))
+
+
+def _text_quality_ratio(text: str) -> float:
+    """Proporción global de tokens 'palabra real' en el texto (0..1).
+
+    Sirve para decidir si una capa de texto embebida (OCR previo) es confiable
+    o es basura de show-through que conviene descartar y re-OCR.
+    """
+    tokens = text.split()
+    if not tokens:
+        return 0.0
+    return sum(1 for t in tokens if _is_word_like(t)) / len(tokens)
+
+
+def _line_quality(line: str) -> float:
+    """Proporción de tokens 'palabra real' en una línea (0..1)."""
+    tokens = line.split()
+    if not tokens:
+        return 1.0  # línea vacía: neutra, se conserva como separador
+    return sum(1 for t in tokens if _is_word_like(t)) / len(tokens)
+
+
+def strip_garbage_lines(text: str) -> str:
+    """
+    Elimina líneas dominadas por ruido de show-through (texto fantasma del
+    reverso de la hoja). Conserva las líneas con suficiente contenido legible.
+
+    Reglas de conservación (en orden):
+      1. Líneas de ≤2 tokens: se conservan solo si tienen ≥3 letras o un
+         número de ≥4 dígitos (títulos/fechas); descarta ruido tipo "e." o "4".
+      2. Sin ninguna palabra real → se descartan (basura pura).
+      3. Proporción de palabras reales ≥ `_LINE_MIN_QUALITY` → se conservan.
+      4. Líneas cortas (≤5 tokens) con al menos una palabra real (títulos
+         numerados como "5. Plan Q2 2026") → se conservan.
+      5. El resto → se descarta.
+    """
+    kept: list[str] = []
+    for line in text.splitlines():
+        tokens = line.split()
+        if not tokens:
+            kept.append(line)  # separador en blanco
+            continue
+        if len(tokens) <= 2:
+            alpha = sum(c.isalpha() for c in line)
+            has_num = any(t.isdigit() and len(t) >= 4 for t in tokens)
+            if alpha >= 3 or has_num:
+                kept.append(line)
+            continue
+        good = sum(1 for t in tokens if _is_word_like(t))
+        if good == 0:
+            continue
+        if good / len(tokens) >= _LINE_MIN_QUALITY:
+            kept.append(line)
+            continue
+        if len(tokens) <= 5:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def _otsu_threshold(gray: "Image.Image") -> int:
+    """Umbral óptimo de Otsu (0-255) a partir del histograma en escala de grises."""
+    hist = gray.histogram()[:256]
+    total = sum(hist)
+    if total == 0:
+        return 128
+
+    sum_all = sum(i * hist[i] for i in range(256))
+    sum_b = 0.0
+    w_b = 0
+    max_var = -1.0
+    threshold = 128
+
+    for i in range(256):
+        w_b += hist[i]
+        if w_b == 0:
+            continue
+        w_f = total - w_b
+        if w_f == 0:
+            break
+        sum_b += i * hist[i]
+        m_b = sum_b / w_b
+        m_f = (sum_all - sum_b) / w_f
+        var_between = w_b * w_f * (m_b - m_f) ** 2
+        if var_between > max_var:
+            max_var = var_between
+            threshold = i
+    return threshold
+
+
+def _binarize_image(img: "Image.Image") -> "Image.Image":
+    """
+    Binariza (blanco/negro) usando Otsu con un sesgo hacia lo oscuro.
+
+    El show-through se transparenta como gris claro; la tinta del frente es
+    gris muy oscuro. Al recortar en Otsu × 0.88 conservamos solo la tinta
+    sólida del frente y mandamos el texto fantasma a blanco → desaparece.
+    """
+    from PIL import ImageOps  # noqa: PLC0415
+
+    gray = img.convert("L")
+    gray = ImageOps.autocontrast(gray, cutoff=1)
+    thr = int(_otsu_threshold(gray) * 0.88)
+    bw = gray.point(lambda p, t=thr: 255 if p > t else 0, mode="L")
+
+    w, h = bw.size
+    if max(w, h) < 2000:
+        scale = 2 if max(w, h) < 1000 else 1.5
+        bw = bw.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    return bw
+
+
+def _downscale_for_ocr(img: "Image.Image") -> "Image.Image":
+    """Reduce la imagen si excede `_MAX_OCR_DIMENSION` (acelera el OCR)."""
+    w, h = img.size
+    longest = max(w, h)
+    if longest <= _MAX_OCR_DIMENSION:
+        return img
+    scale = _MAX_OCR_DIMENSION / longest
+    new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+    return img.resize(new_size, Image.LANCZOS)
+
+
+def _preprocess_for_mode(img: "Image.Image", mode: str) -> "Image.Image":
+    """Aplica el preprocesamiento correspondiente al modo del intento OCR."""
+    if mode == "bin":
+        return _binarize_image(img)
+    if mode == "soft":
+        return preprocess_image(img)
+    return img  # "raw"
+
+
+def _ocr_text_by_confidence(
+    img: "Image.Image", lang: str, psm: int, dpi: int,
+    min_conf: int = _MIN_WORD_CONFIDENCE,
+) -> str:
+    """
+    OCR que descarta palabras por debajo de `min_conf` y reconstruye el texto
+    respetando la estructura de líneas.
+
+    Es la clave contra el show-through: el texto fantasma del reverso se lee con
+    confianza baja aunque "parezca" palabra, así que se elimina aquí en vez de
+    intentar adivinarlo después con heurísticas de diccionario.
+    """
+    from pytesseract import Output  # noqa: PLC0415
+
+    config = f"--psm {psm} --dpi {dpi}"
+    data = pytesseract.image_to_data(
+        img, lang=lang, config=config, output_type=Output.DICT
+    )
+
+    lines: dict[tuple, list[str]] = {}
+    n = len(data["text"])
+    for i in range(n):
+        word = (data["text"][i] or "").strip()
+        if not word:
+            continue
+        try:
+            conf = float(data["conf"][i])
+        except (ValueError, TypeError):
+            conf = -1.0
+        if conf < min_conf:
+            continue
+        key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+        lines.setdefault(key, []).append(word)
+
+    return "\n".join(" ".join(lines[k]) for k in sorted(lines))
+
+
 def _ocr_best_attempt(
     img: "Image.Image", page_num: int = 1, total: int = 1, dpi: int = 150
 ) -> str:
     """
     Prueba la secuencia de intentos OCR y devuelve el mejor resultado.
+
+    Selecciona por CALIDAD (número de palabras reales), no por cantidad de
+    caracteres: el ruido de show-through genera muchos caracteres basura pero
+    pocas palabras reales, así que ya no "gana" por volumen.
     Si la imagen parece invertida (fondo oscuro), la invierte primero.
     """
     from PIL import ImageOps  # noqa: PLC0415
@@ -230,6 +461,9 @@ def _ocr_best_attempt(
         logger.warning(f"Página {page_num} parece en blanco (std={analysis['std']:.1f})")
         return ""
 
+    # Reducir la imagen (los escaneos vienen enormes → OCR lentísimo).
+    img = _downscale_for_ocr(img)
+
     # Si la imagen parece invertida (blanco sobre negro), invertirla
     work_images = [img]
     if analysis["likely_inverted"]:
@@ -238,37 +472,43 @@ def _ocr_best_attempt(
         work_images = [inverted, img]   # primero la invertida
 
     best_text = ""
-    best_chars = 0
+    best_words = -1
 
     for work_img in work_images:
-        for do_preprocess, lang, psm in _OCR_ATTEMPTS:
+        for mode, lang, psm, is_fallback in _OCR_ATTEMPTS:
+            # Saltar los intentos de fallback (inglés) si ya tenemos texto útil.
+            if is_fallback and best_words >= _SKIP_FALLBACK_MIN_WORDS:
+                continue
             try:
-                proc_img = preprocess_image(work_img) if do_preprocess else work_img
-                config = f"--psm {psm} --dpi {dpi}"
-                text = pytesseract.image_to_string(proc_img, lang=lang, config=config)
-                chars = len(text.strip())
+                proc_img = _preprocess_for_mode(work_img, mode)
+                # OCR filtrando palabras de baja confianza (quita show-through).
+                text = _ocr_text_by_confidence(proc_img, lang, psm, dpi)
+                text = strip_garbage_lines(text)
+                words = _count_good_words(text)
                 logger.info(
-                    f"OCR p{page_num}/{total} — preproc={do_preprocess} "
-                    f"lang={lang} psm={psm} → {chars} chars"
+                    f"OCR p{page_num}/{total} — modo={mode} "
+                    f"lang={lang} psm={psm} → {words} palabras / {len(text.strip())} chars"
                 )
-                if chars > best_chars:
-                    best_chars = chars
+                if words > best_words:
+                    best_words = words
                     best_text = text
                 # Solo detener si el resultado es claramente bueno
-                if chars >= _CHARS_GOOD_ENOUGH:
-                    logger.info(f"Resultado suficiente ({chars} chars ≥ {_CHARS_GOOD_ENOUGH}), deteniendo.")
-                    return text
+                if words >= _WORDS_GOOD_ENOUGH:
+                    logger.info(
+                        f"Resultado suficiente ({words} palabras ≥ {_WORDS_GOOD_ENOUGH}), deteniendo."
+                    )
+                    return best_text
             except Exception as exc:
                 logger.warning(f"OCR p{page_num} falló (lang={lang} psm={psm}): {exc}")
 
-    if best_chars > 0:
-        logger.info(f"Mejor resultado encontrado: {best_chars} chars en p{page_num}")
+    if best_words > 0:
+        logger.info(f"Mejor resultado encontrado: {best_words} palabras en p{page_num}")
     else:
         logger.warning(
-            f"Todos los intentos OCR dieron 0 chars en p{page_num} "
+            f"Todos los intentos OCR dieron 0 palabras útiles en p{page_num} "
             f"(mean={analysis['mean']:.1f}, std={analysis['std']:.1f})."
         )
-    return best_text
+    return best_text  # ya viene filtrado por strip_garbage_lines
 
 
 def preprocess_image(img: "Image.Image") -> "Image.Image":
