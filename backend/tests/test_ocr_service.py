@@ -62,6 +62,12 @@ def test_strip_keeps_short_titles():
     assert ocr_service.strip_garbage_lines(text) == text
 
 
+def test_text_quality_ratio_distinguishes_layers():
+    """La capa de texto limpia supera el umbral; la basura del escáner no."""
+    assert ocr_service._text_quality_ratio(CLEAN) >= ocr_service._DIGITAL_TEXT_MIN_QUALITY
+    assert ocr_service._text_quality_ratio(GARBAGE) < ocr_service._DIGITAL_TEXT_MIN_QUALITY
+
+
 def test_otsu_threshold_in_range():
     from PIL import Image  # import perezoso: Pillow sí está disponible en tests
 

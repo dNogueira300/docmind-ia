@@ -47,6 +47,11 @@ _WORDS_GOOD_ENOUGH = 80
 # "palabra real" por debajo de este umbral (ruido de show-through).
 _LINE_MIN_QUALITY = 0.35
 
+# Si la capa de texto embebida en un PDF (OCR previo del escáner) tiene una
+# proporción de palabras reales por debajo de esto, se descarta y se re-OCR.
+# Texto español limpio ≈ 0.6-0.8; basura de show-through ≈ 0.2-0.35.
+_DIGITAL_TEXT_MIN_QUALITY = 0.55
+
 
 def extract_text(stored_path: str, file_type: str) -> str:
     try:
@@ -116,11 +121,24 @@ def _extract_pdf(file_bytes: bytes) -> str:
     try:
         import pypdf  # noqa: PLC0415
         reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-        text = " ".join(p.extract_text() or "" for p in reader.pages).strip()
+        text = "\n".join(p.extract_text() or "" for p in reader.pages).strip()
         if len(text) >= MIN_DIGITAL_TEXT_LENGTH:
-            logger.info("PDF digital detectado — usando pypdf")
-            return text
-        logger.info("Poco texto en pypdf — intentando Tesseract")
+            # No basta con que exista una capa de texto: muchos escáneres
+            # incrustan un OCR previo de mala calidad que incluye el
+            # show-through (texto fantasma del reverso). Si la capa es de baja
+            # calidad, la descartamos y re-OCR sobre la imagen rasterizada,
+            # donde la binarización sí elimina el fantasma.
+            quality = _text_quality_ratio(text)
+            if quality >= _DIGITAL_TEXT_MIN_QUALITY:
+                logger.info(f"PDF digital detectado (calidad={quality:.2f}) — usando pypdf")
+                return strip_garbage_lines(text)
+            logger.info(
+                f"Capa de texto del PDF de baja calidad (calidad={quality:.2f} < "
+                f"{_DIGITAL_TEXT_MIN_QUALITY}) — posible OCR previo con show-through. "
+                "Rasterizando y re-OCR con Tesseract."
+            )
+        else:
+            logger.info("Poco texto en pypdf — intentando Tesseract")
     except Exception as exc:
         logger.warning(f"pypdf falló: {exc}")
 
@@ -229,6 +247,18 @@ def _is_word_like(token: str) -> bool:
 def _count_good_words(text: str) -> int:
     """Número de tokens que parecen palabras reales. Métrica de calidad de OCR."""
     return sum(1 for t in text.split() if _is_word_like(t))
+
+
+def _text_quality_ratio(text: str) -> float:
+    """Proporción global de tokens 'palabra real' en el texto (0..1).
+
+    Sirve para decidir si una capa de texto embebida (OCR previo) es confiable
+    o es basura de show-through que conviene descartar y re-OCR.
+    """
+    tokens = text.split()
+    if not tokens:
+        return 0.0
+    return sum(1 for t in tokens if _is_word_like(t)) / len(tokens)
 
 
 def _line_quality(line: str) -> float:
