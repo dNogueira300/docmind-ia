@@ -54,9 +54,56 @@ function OriginalPreview({ url, fileType }) {
   )
 }
 
-function DigitalizedPreview({ text }) {
+function DigitalizedBlock({ block }) {
+  const type = block?.type
+  if (type === 'heading') {
+    const lvl = Math.min(Math.max(parseInt(block.level, 10) || 2, 1), 3)
+    const cls = lvl === 1 ? 'text-lg font-bold mt-4 mb-2'
+      : lvl === 2 ? 'text-base font-semibold mt-3 mb-1.5'
+      : 'text-sm font-semibold mt-2 mb-1'
+    return <p className={cls}>{block.text}</p>
+  }
+  if (type === 'bullets') {
+    return (
+      <ul className="list-disc pl-6 my-2 space-y-0.5">
+        {(block.items || []).map((it, i) => <li key={i}>{it}</li>)}
+      </ul>
+    )
+  }
+  if (type === 'table') {
+    const header = block.header || []
+    const rows = block.rows || []
+    return (
+      <table className="border-collapse my-3 w-full text-[12px]">
+        {header.length > 0 && (
+          <thead>
+            <tr>
+              {header.map((h, i) => (
+                <th key={i} className="border border-gray-400 bg-gray-100 px-2 py-1 text-left font-semibold">{h}</th>
+              ))}
+            </tr>
+          </thead>
+        )}
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri}>
+              {(Array.isArray(r) ? r : []).map((c, ci) => (
+                <td key={ci} className="border border-gray-400 px-2 py-1 align-top">{c}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
+  return <p className="my-1.5 whitespace-pre-wrap">{block.text}</p>
+}
+
+function DigitalizedPreview({ blocks, text }) {
+  const hasBlocks = Array.isArray(blocks) && blocks.length > 0
   const normalized = (text || '').trim()
-  if (!normalized) return (
+
+  if (!hasBlocks && !normalized) return (
     <div className="flex flex-col items-center justify-center h-full text-center px-6 text-xs" style={{ color: 'var(--color-text-muted)' }}>
       <FileText size={28} className="mb-2 opacity-60" />
       <p>Sin texto digitalizado disponible todavía.</p>
@@ -64,8 +111,10 @@ function DigitalizedPreview({ text }) {
   )
   return (
     <div className="w-full h-full overflow-auto bg-white text-black rounded-[var(--radius-md)] border border-[var(--color-border)]">
-      <article className="prose prose-sm max-w-none p-6 leading-relaxed font-serif text-[13px] whitespace-pre-wrap">
-        {normalized}
+      <article className="prose prose-sm max-w-none p-6 leading-relaxed font-serif text-[13px]">
+        {hasBlocks
+          ? blocks.map((b, i) => <DigitalizedBlock key={i} block={b} />)
+          : <div className="whitespace-pre-wrap">{normalized}</div>}
       </article>
     </div>
   )
@@ -281,7 +330,7 @@ export default function DocumentDetail({ doc: initialDoc, categories = [], onClo
             <div className="flex-1 min-h-0">
               {previewTab === 'original'
                 ? <OriginalPreview url={previewUrl} fileType={previewType} />
-                : <DigitalizedPreview text={doc.ocr_text} />
+                : <DigitalizedPreview blocks={doc.structured_content} text={doc.ocr_text} />
               }
             </div>
 

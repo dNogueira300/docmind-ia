@@ -118,18 +118,33 @@ def process_document(document_id: str, db: Session) -> None:
         ai_classify_ok = bool(org and plan_service.has_feature(org, "ai_classification"))
         ai_suggest_ok = bool(org and plan_service.has_feature(org, "ai_suggestions"))
 
-        # ── 3: Resumen automático con Gemini (gated por plan + créditos) ──────
+        # ── 3: Resumen + estructura del .docx en UNA sola llamada a Gemini ────
+        # (gated por plan + un único crédito). Si no hay IA/crédito, el resumen
+        # queda vacío y la estructura cae al parser heurístico local (gratis).
+        structured_blocks = None
         if ai_summary_ok and plan_service.consume_ai_credit(db, org):
-            doc.ai_summary = gemini_service.summarize_document(
+            result = gemini_service.summarize_and_structure(
                 ocr_text, doc_name=doc.original_filename
             )
-            db.commit()
+            if result:
+                doc.ai_summary = result.get("summary")
+                structured_blocks = result.get("blocks")
+
+        # Estructura siempre presente para la vista previa: Gemini si hubo,
+        # heurística local en caso contrario (títulos + viñetas, sin tablas).
+        if not structured_blocks:
+            structured_blocks = docx_service.heuristic_blocks(ocr_text)
+        # Persistir la estructura (mismo contenido que el .docx) para mostrar la
+        # vista previa "Digitalizado" sin re-llamar a la IA en cada visualización.
+        doc.structured_content = structured_blocks
+        db.commit()
 
         # ── 4: Generación del .docx ───────────────────────────────────────────
         try:
             docx_bytes = docx_service.build_docx(
                 ocr_text=ocr_text,
                 source_filename=doc.original_filename,
+                blocks=structured_blocks,
             )
             digitalized_path = minio_service.upload_digitalized_docx(
                 docx_bytes=docx_bytes,
