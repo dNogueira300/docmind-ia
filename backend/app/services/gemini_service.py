@@ -335,67 +335,80 @@ def suggest_category(
         return None
 
 
-_STRUCTURE_PROMPT = """\
-Eres un experto en reconstruir la estructura de documentos administrativos y \
-legales peruanos a partir de texto extraído por OCR (que viene sin formato).
+_SUMMARY_STRUCTURE_PROMPT = """\
+Eres un asistente experto en documentos administrativos y legales peruanos.
+A partir del TEXTO OCR (extraído sin formato) del archivo "{doc_name}", produces
+DOS cosas en una sola respuesta JSON:
 
-A partir del TEXTO OCR, reconstruye el documento como una lista de bloques \
-estructurados, respetando el orden original. Corrige espaciados obvios del OCR \
-pero NO inventes datos que no estén en el texto.
+1) "summary": un resumen en español, formal y de redacción continua (máximo 220 \
+palabras, sin títulos ni listas), que incluya cuando aparezca en el texto: tipo de \
+documento, partes involucradas, fecha, objeto o propósito, montos y condiciones, \
+fechas clave (vigencia/entrega/vencimiento) y obligaciones principales.
 
+2) "blocks": la reconstrucción de la ESTRUCTURA del documento como lista de bloques,
+respetando el orden original. Corrige espaciados obvios del OCR pero NO inventes datos.
 Tipos de bloque válidos:
 - {{"type": "heading", "level": 1-3, "text": "..."}}   (títulos y secciones)
 - {{"type": "paragraph", "text": "..."}}               (párrafos de texto corrido)
 - {{"type": "bullets", "items": ["...", "..."]}}       (listas con viñetas)
 - {{"type": "table", "header": ["col1","col2"], "rows": [["a","b"], ["c","d"]]}}
-
-Reglas:
-- Une las líneas de un mismo párrafo en un solo bloque "paragraph".
-- Si detectas datos tabulares (filas y columnas), represéntalos como "table".
-- Los títulos de sección numerados ("1. Resumen…") van como "heading" nivel 2.
-- El nombre de la entidad emisora y el título principal pueden ir como "heading" nivel 1.
+Reglas de "blocks": une las líneas de un mismo párrafo en un solo "paragraph"; los
+datos tabulares (filas y columnas) van como "table"; los títulos numerados
+("1. Resumen…") van como "heading" nivel 2; el emisor y el título principal pueden
+ir como "heading" nivel 1.
 
 Responde SOLO con JSON válido, sin markdown ni texto adicional, con esta forma:
-{{"blocks": [ ...bloques... ]}}
+{{"summary": "...", "blocks": [ ...bloques... ]}}
 
-TEXTO OCR ("{doc_name}"):
+TEXTO OCR:
 {text}
 """
 
 
-def structure_document(text: str, doc_name: str = "") -> Optional[list[dict]]:
+def summarize_and_structure(text: str, doc_name: str = "") -> Optional[dict]:
     """
-    Reconstruye la estructura del documento (títulos, párrafos, viñetas, tablas)
-    a partir del texto OCR, para generar un .docx fiel al original.
+    Genera en UNA sola llamada a Gemini el resumen y la estructura del documento
+    (bloques para el .docx). Ahorra un crédito frente a hacer dos llamadas.
 
     Returns:
-        Lista de bloques (dicts) lista para docx_service, o None si Gemini no
-        está disponible/falla o la respuesta es inválida → el caller usa el
-        parser heurístico local como fallback.
+        dict {"summary": str, "blocks": list[dict] | None}, o None si el texto
+        está vacío. Si Gemini no está disponible o falla, devuelve el resumen
+        heurístico y blocks=None (el caller usa el parser heurístico del .docx).
     """
-    if not _is_available() or not text or len(text.strip()) < 40:
+    if not text or not text.strip():
         return None
+    if len(text.strip()) < 80:
+        return {"summary": text.strip()[:300], "blocks": None}
+    if not _is_available():
+        logger.warning("Gemini no disponible — resumen heurístico, sin estructura IA.")
+        return {"summary": _fallback_summary(text), "blocks": None}
+
     try:
         client = _get_client()
-        prompt = _STRUCTURE_PROMPT.format(
+        prompt = _SUMMARY_STRUCTURE_PROMPT.format(
             doc_name=doc_name or "desconocido", text=text[:8000]
         )
         response = client.models.generate_content(model=MODEL, contents=prompt)
         data = _extract_json(response.text or "")
         if not data:
-            return None
+            return {"summary": _fallback_summary(text), "blocks": None}
+
+        summary = str(data.get("summary") or "").strip() or _fallback_summary(text)
+
         blocks = data.get("blocks")
-        if not isinstance(blocks, list) or not blocks:
-            return None
-        # Conservar solo bloques con forma válida.
-        valid = [b for b in blocks if isinstance(b, dict) and b.get("type")]
-        if not valid:
-            return None
-        logger.info(f"Gemini estructura: {len(valid)} bloque(s) para '{doc_name}'")
-        return valid
+        valid_blocks = None
+        if isinstance(blocks, list):
+            valid = [b for b in blocks if isinstance(b, dict) and b.get("type")]
+            valid_blocks = valid or None
+
+        logger.info(
+            f"Gemini resumen+estructura: {len(summary)} chars de resumen, "
+            f"{len(valid_blocks) if valid_blocks else 0} bloque(s) para '{doc_name}'"
+        )
+        return {"summary": summary, "blocks": valid_blocks}
     except Exception as exc:
-        logger.warning(f"Error en Gemini structure_document: {exc}")
-        return None
+        logger.warning(f"Error en Gemini summarize_and_structure: {exc}")
+        return {"summary": _fallback_summary(text), "blocks": None}
 
 
 def rerank_semantic(query: str, candidates: list[dict]) -> Optional[list[str]]:

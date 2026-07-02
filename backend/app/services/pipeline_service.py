@@ -118,22 +118,21 @@ def process_document(document_id: str, db: Session) -> None:
         ai_classify_ok = bool(org and plan_service.has_feature(org, "ai_classification"))
         ai_suggest_ok = bool(org and plan_service.has_feature(org, "ai_suggestions"))
 
-        # ── 3: Resumen automático con Gemini (gated por plan + créditos) ──────
+        # ── 3: Resumen + estructura del .docx en UNA sola llamada a Gemini ────
+        # (gated por plan + un único crédito). Si no hay IA/crédito, el resumen
+        # queda vacío y el .docx usa su parser heurístico local (gratis).
+        structured_blocks = None
         if ai_summary_ok and plan_service.consume_ai_credit(db, org):
-            doc.ai_summary = gemini_service.summarize_document(
+            result = gemini_service.summarize_and_structure(
                 ocr_text, doc_name=doc.original_filename
             )
-            db.commit()
+            if result:
+                doc.ai_summary = result.get("summary")
+                structured_blocks = result.get("blocks")
+                db.commit()
 
         # ── 4: Generación del .docx ───────────────────────────────────────────
         try:
-            # Estructura fiel con Gemini (gateado por plan + créditos); si no hay
-            # IA/crédito, build_docx usa su parser heurístico local (gratis).
-            structured_blocks = None
-            if ai_summary_ok and plan_service.consume_ai_credit(db, org):
-                structured_blocks = gemini_service.structure_document(
-                    ocr_text, doc_name=doc.original_filename
-                )
             docx_bytes = docx_service.build_docx(
                 ocr_text=ocr_text,
                 source_filename=doc.original_filename,

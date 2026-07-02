@@ -109,7 +109,8 @@ def test_pipeline_classified(db: Session, admin_user, test_category: Category):
     with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
          patch("app.services.pipeline_service.gemini_service.classify_or_suggest",
                return_value={"category": test_category.name, "confidence": 0.92, "new_category": None}), \
-         patch("app.services.pipeline_service.gemini_service.summarize_document", return_value="Resumen de prueba."), \
+         patch("app.services.pipeline_service.gemini_service.summarize_and_structure",
+               return_value={"summary": "Resumen de prueba.", "blocks": None}), \
          patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"fake-docx"), \
          patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="path/to.docx"), \
          patch("app.services.pipeline_service.ocr_service.build_searchable_pdf", return_value=None), \
@@ -162,7 +163,8 @@ def test_pipeline_review_bajo_score(db: Session, admin_user, test_category: Cate
     with patch("app.services.pipeline_service.ocr_service.extract_text") as mock_ocr, \
          patch("app.services.pipeline_service.gemini_service.classify_or_suggest",
                return_value={"category": test_category.name, "confidence": 0.25, "new_category": None}), \
-         patch("app.services.pipeline_service.gemini_service.summarize_document", return_value="Resumen."), \
+         patch("app.services.pipeline_service.gemini_service.summarize_and_structure",
+               return_value={"summary": "Resumen.", "blocks": None}), \
          patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"fake-docx"), \
          patch("app.services.pipeline_service.minio_service.upload_digitalized_docx", return_value="path/to.docx"), \
          patch("app.services.pipeline_service.ocr_service.build_searchable_pdf", return_value=None), \
@@ -220,7 +222,7 @@ def test_pipeline_free_plan_clasifica_por_codigo(db: Session, admin_user, test_c
     try:
         with patch("app.services.pipeline_service.ocr_service.extract_text", return_value=_OCR), \
              patch("app.services.pipeline_service.gemini_service.classify_or_suggest") as mock_gemini, \
-             patch("app.services.pipeline_service.gemini_service.summarize_document") as mock_summary, \
+             patch("app.services.pipeline_service.gemini_service.summarize_and_structure") as mock_summary, \
              patch("app.services.pipeline_service.nlp_service.classify_by_keywords",
                    return_value=(test_category.name, 0.8)), \
              patch("app.services.pipeline_service.docx_service.build_docx", return_value=b"x"), \
