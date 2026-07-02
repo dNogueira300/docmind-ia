@@ -52,6 +52,11 @@ _LINE_MIN_QUALITY = 0.35
 # Texto español limpio ≈ 0.6-0.8; basura de show-through ≈ 0.2-0.35.
 _DIGITAL_TEXT_MIN_QUALITY = 0.55
 
+# Confianza mínima (0-100) por palabra que reporta Tesseract. El show-through
+# (texto fantasma del reverso) se lee con confianza baja, así que se descarta.
+# El texto real de un escaneo nítido suele venir con 70-95.
+_MIN_WORD_CONFIDENCE = 55
+
 
 def extract_text(stored_path: str, file_type: str) -> str:
     try:
@@ -277,7 +282,8 @@ def strip_garbage_lines(text: str) -> str:
     reverso de la hoja). Conserva las líneas con suficiente contenido legible.
 
     Reglas de conservación (en orden):
-      1. Líneas de ≤2 tokens (títulos, fechas) → se conservan siempre.
+      1. Líneas de ≤2 tokens: se conservan solo si tienen ≥3 letras o un
+         número de ≥4 dígitos (títulos/fechas); descarta ruido tipo "e." o "4".
       2. Sin ninguna palabra real → se descartan (basura pura).
       3. Proporción de palabras reales ≥ `_LINE_MIN_QUALITY` → se conservan.
       4. Líneas cortas (≤5 tokens) con al menos una palabra real (títulos
@@ -287,8 +293,14 @@ def strip_garbage_lines(text: str) -> str:
     kept: list[str] = []
     for line in text.splitlines():
         tokens = line.split()
+        if not tokens:
+            kept.append(line)  # separador en blanco
+            continue
         if len(tokens) <= 2:
-            kept.append(line)
+            alpha = sum(c.isalpha() for c in line)
+            has_num = any(t.isdigit() and len(t) >= 4 for t in tokens)
+            if alpha >= 3 or has_num:
+                kept.append(line)
             continue
         good = sum(1 for t in tokens if _is_word_like(t))
         if good == 0:
@@ -362,6 +374,43 @@ def _preprocess_for_mode(img: "Image.Image", mode: str) -> "Image.Image":
     return img  # "raw"
 
 
+def _ocr_text_by_confidence(
+    img: "Image.Image", lang: str, psm: int, dpi: int,
+    min_conf: int = _MIN_WORD_CONFIDENCE,
+) -> str:
+    """
+    OCR que descarta palabras por debajo de `min_conf` y reconstruye el texto
+    respetando la estructura de líneas.
+
+    Es la clave contra el show-through: el texto fantasma del reverso se lee con
+    confianza baja aunque "parezca" palabra, así que se elimina aquí en vez de
+    intentar adivinarlo después con heurísticas de diccionario.
+    """
+    from pytesseract import Output  # noqa: PLC0415
+
+    config = f"--psm {psm} --dpi {dpi}"
+    data = pytesseract.image_to_data(
+        img, lang=lang, config=config, output_type=Output.DICT
+    )
+
+    lines: dict[tuple, list[str]] = {}
+    n = len(data["text"])
+    for i in range(n):
+        word = (data["text"][i] or "").strip()
+        if not word:
+            continue
+        try:
+            conf = float(data["conf"][i])
+        except (ValueError, TypeError):
+            conf = -1.0
+        if conf < min_conf:
+            continue
+        key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+        lines.setdefault(key, []).append(word)
+
+    return "\n".join(" ".join(lines[k]) for k in sorted(lines))
+
+
 def _ocr_best_attempt(
     img: "Image.Image", page_num: int = 1, total: int = 1, dpi: int = 150
 ) -> str:
@@ -405,8 +454,9 @@ def _ocr_best_attempt(
         for mode, lang, psm in _OCR_ATTEMPTS:
             try:
                 proc_img = _preprocess_for_mode(work_img, mode)
-                config = f"--psm {psm} --dpi {dpi}"
-                text = pytesseract.image_to_string(proc_img, lang=lang, config=config)
+                # OCR filtrando palabras de baja confianza (quita show-through).
+                text = _ocr_text_by_confidence(proc_img, lang, psm, dpi)
+                text = strip_garbage_lines(text)
                 words = _count_good_words(text)
                 logger.info(
                     f"OCR p{page_num}/{total} — modo={mode} "
@@ -420,7 +470,7 @@ def _ocr_best_attempt(
                     logger.info(
                         f"Resultado suficiente ({words} palabras ≥ {_WORDS_GOOD_ENOUGH}), deteniendo."
                     )
-                    return strip_garbage_lines(text)
+                    return best_text
             except Exception as exc:
                 logger.warning(f"OCR p{page_num} falló (lang={lang} psm={psm}): {exc}")
 
@@ -431,7 +481,7 @@ def _ocr_best_attempt(
             f"Todos los intentos OCR dieron 0 palabras útiles en p{page_num} "
             f"(mean={analysis['mean']:.1f}, std={analysis['std']:.1f})."
         )
-    return strip_garbage_lines(best_text)
+    return best_text  # ya viene filtrado por strip_garbage_lines
 
 
 def preprocess_image(img: "Image.Image") -> "Image.Image":

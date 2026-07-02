@@ -62,6 +62,15 @@ def test_strip_keeps_short_titles():
     assert ocr_service.strip_garbage_lines(text) == text
 
 
+def test_strip_removes_short_junk_lines():
+    """Ruido corto de show-through (una letra o símbolo suelto) se descarta."""
+    text = "Contenido legible de la propuesta comercial vigente\ne.\nmá\nA\n4\n*"
+    result = ocr_service.strip_garbage_lines(text)
+    assert "Contenido legible" in result
+    for junk in ("e.", "má", "A", "4", "*"):
+        assert junk not in result.split("\n")
+
+
 def test_text_quality_ratio_distinguishes_layers():
     """La capa de texto limpia supera el umbral; la basura del escáner no."""
     assert ocr_service._text_quality_ratio(CLEAN) >= ocr_service._DIGITAL_TEXT_MIN_QUALITY
