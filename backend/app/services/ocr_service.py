@@ -17,21 +17,21 @@ MIN_DIGITAL_TEXT_LENGTH = 50
 # y memoria (rasterizar alto en multipágina dispara la RAM en Railway).
 SEARCHABLE_PDF_DPI = 150
 
-# Secuencia de intentos: (modo, lang, psm)
+# Secuencia de intentos: (modo, lang, psm, es_fallback)
 #   modo "bin"  → binarización Otsu (elimina el show-through / texto fantasma
 #                 del reverso de la hoja que se transparenta en el escaneo)
 #   modo "soft" → preprocesamiento suave (grises + contraste + nitidez)
 #   modo "raw"  → imagen original sin tocar
+#   es_fallback → solo se prueba si los intentos en español fallaron casi por
+#                 completo (evita correr OCR en inglés en páginas ya resueltas)
 _OCR_ATTEMPTS = [
-    ("bin",  "spa",     3),   # binarizado suele ganar en escaneos con show-through
-    ("bin",  "spa",     6),
-    ("soft", "spa",     3),
-    ("soft", "spa",     6),   # uniform block — mejor para cartas formales
-    ("raw",  "spa",     6),
-    ("raw",  "spa",     3),
-    ("raw",  "spa",     4),
-    ("raw",  "spa+eng", 6),
-    ("raw",  "eng",     6),
+    ("bin",  "spa",     3, False),   # binarizado suele ganar con show-through
+    ("bin",  "spa",     6, False),
+    ("raw",  "spa",     6, False),
+    ("raw",  "spa",     3, False),
+    ("soft", "spa",     6, False),
+    ("raw",  "spa+eng", 6, True),    # fallback: solo si spa casi no extrajo nada
+    ("raw",  "eng",     6, True),
 ]
 
 # DPI a probar en orden. Reducido para producción (Railway): rasterizar a 300 DPI
@@ -39,9 +39,18 @@ _OCR_ATTEMPTS = [
 _DPI_SEQUENCE = [150, 100, 75]
 
 # Por encima de este número de palabras "reales" consideramos el resultado
-# "suficientemente bueno" y dejamos de probar combinaciones. ~80 palabras ≈
+# "suficientemente bueno" y dejamos de probar combinaciones. ~60 palabras ≈
 # un párrafo completo legible.
-_WORDS_GOOD_ENOUGH = 80
+_WORDS_GOOD_ENOUGH = 60
+
+# Si ya extrajimos al menos estas palabras en español, no vale la pena correr
+# los intentos de fallback en inglés (que son lentos y rara vez mejoran).
+_SKIP_FALLBACK_MIN_WORDS = 15
+
+# Lado máximo (px) al que se reduce la imagen antes del OCR. Los escaneos vienen
+# a resoluciones enormes (p.ej. 5313×7313 ≈ 39 MP) que hacen a Tesseract lentísimo
+# sin ganar precisión. ~3000 px conserva la legibilidad y acelera ~4-5×.
+_MAX_OCR_DIMENSION = 3000
 
 # Al filtrar líneas, descartamos las que tienen una proporción de tokens
 # "palabra real" por debajo de este umbral (ruido de show-through).
@@ -97,8 +106,9 @@ def build_searchable_pdf(stored_path: str, file_type: str) -> Optional[bytes]:
 
         page_pdfs: list[bytes] = []
         for img in pages:
-            # Binarizar para quitar el show-through de imagen y capa de texto.
-            clean = _binarize_image(img)
+            # Reducir + binarizar: quita el show-through (imagen y capa de texto)
+            # y evita generar el PDF sobre una imagen de decenas de megapíxeles.
+            clean = _binarize_image(_downscale_for_ocr(img))
             page_pdfs.append(
                 pytesseract.image_to_pdf_or_hocr(clean, lang="spa", extension="pdf")
             )
@@ -365,6 +375,17 @@ def _binarize_image(img: "Image.Image") -> "Image.Image":
     return bw
 
 
+def _downscale_for_ocr(img: "Image.Image") -> "Image.Image":
+    """Reduce la imagen si excede `_MAX_OCR_DIMENSION` (acelera el OCR)."""
+    w, h = img.size
+    longest = max(w, h)
+    if longest <= _MAX_OCR_DIMENSION:
+        return img
+    scale = _MAX_OCR_DIMENSION / longest
+    new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+    return img.resize(new_size, Image.LANCZOS)
+
+
 def _preprocess_for_mode(img: "Image.Image", mode: str) -> "Image.Image":
     """Aplica el preprocesamiento correspondiente al modo del intento OCR."""
     if mode == "bin":
@@ -440,6 +461,9 @@ def _ocr_best_attempt(
         logger.warning(f"Página {page_num} parece en blanco (std={analysis['std']:.1f})")
         return ""
 
+    # Reducir la imagen (los escaneos vienen enormes → OCR lentísimo).
+    img = _downscale_for_ocr(img)
+
     # Si la imagen parece invertida (blanco sobre negro), invertirla
     work_images = [img]
     if analysis["likely_inverted"]:
@@ -451,7 +475,10 @@ def _ocr_best_attempt(
     best_words = -1
 
     for work_img in work_images:
-        for mode, lang, psm in _OCR_ATTEMPTS:
+        for mode, lang, psm, is_fallback in _OCR_ATTEMPTS:
+            # Saltar los intentos de fallback (inglés) si ya tenemos texto útil.
+            if is_fallback and best_words >= _SKIP_FALLBACK_MIN_WORDS:
+                continue
             try:
                 proc_img = _preprocess_for_mode(work_img, mode)
                 # OCR filtrando palabras de baja confianza (quita show-through).
