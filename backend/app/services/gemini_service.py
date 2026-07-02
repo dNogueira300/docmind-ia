@@ -335,6 +335,69 @@ def suggest_category(
         return None
 
 
+_STRUCTURE_PROMPT = """\
+Eres un experto en reconstruir la estructura de documentos administrativos y \
+legales peruanos a partir de texto extraído por OCR (que viene sin formato).
+
+A partir del TEXTO OCR, reconstruye el documento como una lista de bloques \
+estructurados, respetando el orden original. Corrige espaciados obvios del OCR \
+pero NO inventes datos que no estén en el texto.
+
+Tipos de bloque válidos:
+- {{"type": "heading", "level": 1-3, "text": "..."}}   (títulos y secciones)
+- {{"type": "paragraph", "text": "..."}}               (párrafos de texto corrido)
+- {{"type": "bullets", "items": ["...", "..."]}}       (listas con viñetas)
+- {{"type": "table", "header": ["col1","col2"], "rows": [["a","b"], ["c","d"]]}}
+
+Reglas:
+- Une las líneas de un mismo párrafo en un solo bloque "paragraph".
+- Si detectas datos tabulares (filas y columnas), represéntalos como "table".
+- Los títulos de sección numerados ("1. Resumen…") van como "heading" nivel 2.
+- El nombre de la entidad emisora y el título principal pueden ir como "heading" nivel 1.
+
+Responde SOLO con JSON válido, sin markdown ni texto adicional, con esta forma:
+{{"blocks": [ ...bloques... ]}}
+
+TEXTO OCR ("{doc_name}"):
+{text}
+"""
+
+
+def structure_document(text: str, doc_name: str = "") -> Optional[list[dict]]:
+    """
+    Reconstruye la estructura del documento (títulos, párrafos, viñetas, tablas)
+    a partir del texto OCR, para generar un .docx fiel al original.
+
+    Returns:
+        Lista de bloques (dicts) lista para docx_service, o None si Gemini no
+        está disponible/falla o la respuesta es inválida → el caller usa el
+        parser heurístico local como fallback.
+    """
+    if not _is_available() or not text or len(text.strip()) < 40:
+        return None
+    try:
+        client = _get_client()
+        prompt = _STRUCTURE_PROMPT.format(
+            doc_name=doc_name or "desconocido", text=text[:8000]
+        )
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        data = _extract_json(response.text or "")
+        if not data:
+            return None
+        blocks = data.get("blocks")
+        if not isinstance(blocks, list) or not blocks:
+            return None
+        # Conservar solo bloques con forma válida.
+        valid = [b for b in blocks if isinstance(b, dict) and b.get("type")]
+        if not valid:
+            return None
+        logger.info(f"Gemini estructura: {len(valid)} bloque(s) para '{doc_name}'")
+        return valid
+    except Exception as exc:
+        logger.warning(f"Error en Gemini structure_document: {exc}")
+        return None
+
+
 def rerank_semantic(query: str, candidates: list[dict]) -> Optional[list[str]]:
     """
     Re-rankea semánticamente candidatos de búsqueda (ya filtrados por FTS).

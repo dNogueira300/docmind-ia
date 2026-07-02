@@ -127,9 +127,17 @@ def process_document(document_id: str, db: Session) -> None:
 
         # ── 4: Generación del .docx ───────────────────────────────────────────
         try:
+            # Estructura fiel con Gemini (gateado por plan + créditos); si no hay
+            # IA/crédito, build_docx usa su parser heurístico local (gratis).
+            structured_blocks = None
+            if ai_summary_ok and plan_service.consume_ai_credit(db, org):
+                structured_blocks = gemini_service.structure_document(
+                    ocr_text, doc_name=doc.original_filename
+                )
             docx_bytes = docx_service.build_docx(
                 ocr_text=ocr_text,
                 source_filename=doc.original_filename,
+                blocks=structured_blocks,
             )
             digitalized_path = minio_service.upload_digitalized_docx(
                 docx_bytes=docx_bytes,
