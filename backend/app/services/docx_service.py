@@ -21,6 +21,11 @@ _BULLET_RE = re.compile(r"^\s*[-+*•·»▪◦‣]\s+(.*)")
 _HEADING_RE = re.compile(r"^\s*\d+\.\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ].*")
 
 
+def heuristic_blocks(ocr_text: str) -> list[dict]:
+    """Alias público de `_heuristic_blocks` (para reusar desde el pipeline)."""
+    return _heuristic_blocks(ocr_text)
+
+
 def _heuristic_blocks(ocr_text: str) -> list[dict]:
     """
     Parser local (sin IA): convierte el texto OCR en bloques estructurados.

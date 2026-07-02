@@ -120,7 +120,7 @@ def process_document(document_id: str, db: Session) -> None:
 
         # ── 3: Resumen + estructura del .docx en UNA sola llamada a Gemini ────
         # (gated por plan + un único crédito). Si no hay IA/crédito, el resumen
-        # queda vacío y el .docx usa su parser heurístico local (gratis).
+        # queda vacío y la estructura cae al parser heurístico local (gratis).
         structured_blocks = None
         if ai_summary_ok and plan_service.consume_ai_credit(db, org):
             result = gemini_service.summarize_and_structure(
@@ -129,7 +129,15 @@ def process_document(document_id: str, db: Session) -> None:
             if result:
                 doc.ai_summary = result.get("summary")
                 structured_blocks = result.get("blocks")
-                db.commit()
+
+        # Estructura siempre presente para la vista previa: Gemini si hubo,
+        # heurística local en caso contrario (títulos + viñetas, sin tablas).
+        if not structured_blocks:
+            structured_blocks = docx_service.heuristic_blocks(ocr_text)
+        # Persistir la estructura (mismo contenido que el .docx) para mostrar la
+        # vista previa "Digitalizado" sin re-llamar a la IA en cada visualización.
+        doc.structured_content = structured_blocks
+        db.commit()
 
         # ── 4: Generación del .docx ───────────────────────────────────────────
         try:

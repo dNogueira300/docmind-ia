@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 
 from app.models.base import Base
 
@@ -59,6 +59,10 @@ class Document(Base):
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)
     file_size_kb: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Estructura del documento (bloques: heading/paragraph/bullets/table) que
+    # reconstruye Gemini a partir del OCR. Alimenta la vista previa estructurada
+    # y el .docx. Ver docx_service._render_blocks.
+    structured_content: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Categoría que Gemini propuso si el doc no encajó en ninguna existente.

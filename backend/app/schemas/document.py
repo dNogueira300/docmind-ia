@@ -20,6 +20,7 @@ class DocumentResponse(BaseModel):
     file_type: str
     file_size_kb: Optional[int]
     ocr_text: Optional[str]
+    structured_content: Optional[list] = None
     ai_summary: Optional[str] = None
     ai_confidence_score: Optional[float]
     risk_level: Optional[str] = "low"
